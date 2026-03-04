@@ -316,22 +316,6 @@ input:focus,textarea:focus,select:focus{border-color:#3A7BD5!important;box-shado
 .toast.visible{opacity:1;transform:translateX(-50%) translateY(0)}
 
 @media print{body{background:white!important}.hdr,.fbar,.toast,.arow,.tbtn,.reord,.ms-del,.note-form,.tedit,.atf,.add-dept,.rst,.foot,.tabs,.hdr-actions,.sync-bar,.sess-actions,.sess-add,.su-panel,.su-toggle,.rota-edit-popup,.staff-profile-body{display:none!important}.tpanel{max-height:none!important;overflow:visible!important}.card{break-inside:avoid;box-shadow:none;border:1px solid #ddd;margin-bottom:8px}.mov{display:none!important}.cards,.sched{padding:0 8px}.print-hdr{display:block!important}.day-card{break-inside:avoid}}
-
-.su-days-row{display:flex;gap:4px;margin-top:8px;flex-wrap:wrap}
-.su-day-tog{width:36px;height:28px;border-radius:6px;border:1.5px solid #E5E7EB;background:white;cursor:pointer;font-size:10px;font-weight:700;color:#9CA3AF;display:flex;align-items:center;justify-content:center;transition:all 0.15s}
-.su-day-tog.on{background:#6366F1;color:white;border-color:#6366F1}
-.su-day-dots{display:flex;gap:2px;margin-top:4px}
-.su-day-dot{font-size:9px;font-weight:700;padding:1px 4px;border-radius:4px;background:#EEF2FF;color:#6366F1}
-.att-grid{background:white;border-radius:12px;padding:12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);margin-bottom:12px;overflow-x:auto}
-.att-table{width:100%;border-collapse:collapse;font-size:12px}
-.att-table th{padding:6px 8px;font-weight:700;font-size:10px;text-transform:uppercase;color:#6B7280;background:#F9FAFB;border-bottom:2px solid #E5E7EB;text-align:center}
-.att-table th:first-child{text-align:left;min-width:140px}
-.att-table td{padding:5px 8px;border-bottom:1px solid #F3F4F6;text-align:center}
-.att-table td:first-child{text-align:left;font-weight:600;font-size:12px;color:#1F2937}
-.att-table tr:hover{background:#F9FAFB}
-.att-check{width:20px;height:20px;border-radius:6px;border:none;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;justify-content:center}
-.att-check.on{background:#6366F1;color:white}
-.att-check.off{background:#F3F4F6;color:#D1D5DB}
 </style>
 </head>
 <body>
@@ -587,7 +571,7 @@ let syncCfg={url:'',autoSync:false,lastSync:null},syncStatus='disconnected',sync
 let openDays={mon:true,tue:true,wed:true,thu:true,fri:true};
 let editingSess=null,expandedSess={},suSearch='',addingStaffTo=null,viewingSU=null;
 let schedWeekOffset=0,weekSchedules={};
-let suPageSearch='',suPageFlags=[],suPageSort='name',suAttView=false;
+let suPageSearch='',suPageFlags=[],suPageSort='name';
 let staffProfiles=[],rota={},driverRota={},editingStaffId=null,rotaEditCell=null,driverEditCell=null;
 let rotaWeekOffset=0,rotaSubTab='rooms';
 
@@ -626,7 +610,6 @@ return '<span class="su-flag '+cls+'" title="'+title+'">'+esc(f)+'</span>';
 }
 function showSUDetail(suId){viewingSU=suId;render()}
 function closeSUDetail(){viewingSU=null;render()}
-function toggleSUDay(suId,day){const su=serviceUsers.find(u=>u.id===suId);if(!su)return;if(!su.days)su.days=[];const idx=su.days.indexOf(day);if(idx>=0)su.days.splice(idx,1);else su.days.push(day);save();render()}
 function renderSUDetailModal(){
 const su=serviceUsers.find(u=>u.id===viewingSU);
 if(!su)return'';
@@ -669,14 +652,6 @@ h+=`<div class="su-detail-section"><h4>💡 Behaviour & Communication</h4>`;
 if(su.beh)h+=`<div class="su-detail-row"><span class="lbl">Behaviour</span><span class="val">${esc(su.beh)}</span></div>`;
 if(su.comm)h+=`<div class="su-detail-row"><span class="lbl">Comms</span><span class="val">${esc(su.comm)}</span></div>`;
 h+=`</div>`}
-// Attendance Days
-h+=`<div class="su-detail-section"><h4>📅 Scheduled Days</h4>
-<div class="su-days-row">`;
-DAYS.forEach(d=>{
-const isOn=(su.days||[]).includes(d);
-h+=`<button class="su-day-tog ${isOn?'on':''}" onclick="event.stopPropagation();toggleSUDay('${su.id}','${d}')">${DAY_NAMES[d].slice(0,3)}</button>`;
-});
-h+=`</div></div>`;
 h+=`</div></div>`;
 return h;
 }
@@ -694,8 +669,30 @@ if(!s.locationEmoji)s.locationEmoji='📍';
 return s;
 }
 
+// Server API
+let serverMode=false; // true if running on server
+let saveDebounce=null;
+
+function getDataObj(){return {departments:D,staff,history,schedule,serviceUsers,staffProfiles,rota,driverRota,weekSchedules}}
+
 function load(){
-// Try loading from current key, then migrate from older keys
+// Detect if we're on the server (not file:// or github.io)
+const isServer=location.protocol==='http:'||location.protocol==='https:';
+const isLocal=location.hostname==='localhost'||location.hostname==='127.0.0.1';
+const isGitHub=location.hostname.includes('github.io');
+serverMode=isServer&&(isLocal||!isGitHub);
+
+if(serverMode){
+// Try server load
+serverLoad().then(ok=>{
+if(!ok){loadFromLS();render()}
+}).catch(()=>{loadFromLS();render()});
+return;
+}
+loadFromLS();
+}
+
+function loadFromLS(){
 let d=null;
 const tryKeys=['spiral-tracker-data','spiral-v8','spiral-v7','spiral-v6'];
 for(const key of tryKeys){try{const raw=localStorage.getItem(key);if(raw){const parsed=JSON.parse(raw);if(parsed&&parsed.departments){d=parsed;if(key!==SK){localStorage.removeItem(key)}break}}}catch{}}
@@ -709,13 +706,66 @@ staffProfiles=d.staffProfiles||JSON.parse(JSON.stringify(DEF_STAFF_PROFILES));
 rota=d.rota||{};
 driverRota=d.driverRota||{};
 weekSchedules=d.weekSchedules||{};
-save();return;
+saveToLS();return;
 }
 D=JSON.parse(JSON.stringify(DEFS.departments));staff=[...DEFS.staff];history=[];schedule=JSON.parse(JSON.stringify(DEF_SCHEDULE));serviceUsers=JSON.parse(JSON.stringify(DEF_SUS));staffProfiles=JSON.parse(JSON.stringify(DEF_STAFF_PROFILES));rota={};driverRota={};weekSchedules={};
 }
+
+function applyData(d){
+D=d.departments||JSON.parse(JSON.stringify(DEFS.departments));
+staff=d.staff||[...DEFS.staff];
+history=d.history||[];
+schedule=(d.schedule||JSON.parse(JSON.stringify(DEF_SCHEDULE))).map(migrateSession);
+serviceUsers=d.serviceUsers||JSON.parse(JSON.stringify(DEF_SUS));
+staffProfiles=d.staffProfiles||JSON.parse(JSON.stringify(DEF_STAFF_PROFILES));
+rota=d.rota||{};
+driverRota=d.driverRota||{};
+weekSchedules=d.weekSchedules||{};
+}
+
+async function serverLoad(){
+try{
+const r=await fetch('/api/data');
+if(r.status===401){showToast('Login failed');return false}
+if(!r.ok)throw 0;
+const json=await r.json();
+if(json.data&&json.data.departments){
+applyData(json.data);
+saveToLS();
+render();
+return true;
+}
+// No data on server yet — load from localStorage and push up
+loadFromLS();
+await saveToServer();
+render();
+showToast('Migrated local data to server');
+return true;
+}catch(e){return false}
+}
+
 function save(){
-try{localStorage.setItem(SK,JSON.stringify({departments:D,staff,history,schedule,serviceUsers,staffProfiles,rota,driverRota,weekSchedules}))}catch{}
+saveToLS();
+if(serverMode){
+clearTimeout(saveDebounce);
+saveDebounce=setTimeout(()=>saveToServer(),800);
+}
 if(syncCfg.url&&syncCfg.autoSync){clearTimeout(syncDebounce);syncDebounce=setTimeout(()=>pushToSheet(),1500)}
+}
+
+function saveToLS(){
+try{localStorage.setItem(SK,JSON.stringify(getDataObj()))}catch{}
+}
+
+async function saveToServer(){
+try{
+const r=await fetch('/api/data',{
+method:'POST',
+headers:{'Content-Type':'application/json'},
+body:JSON.stringify({data:getDataObj()})
+});
+if(!r.ok)throw 0;
+}catch{showToast('Server save failed — saved locally')}
 }
 function loadSyncCfg(){try{const c=JSON.parse(localStorage.getItem(SYNC_KEY));if(c)syncCfg=c}catch{}}
 function saveSyncCfg(){try{localStorage.setItem(SYNC_KEY,JSON.stringify(syncCfg))}catch{}}
@@ -1083,7 +1133,7 @@ h+=`</div>`});
 if(isA){h+=`<div class="atf"><div class="atf-r"><input type="text" id="atf-t-${dept.id}" placeholder="New task..." onkeydown="if(event.key==='Enter')addTask('${dept.id}');if(event.key==='Escape'){addingTo=null;render()}"></div><div class="atf-r"><select id="atf-p-${dept.id}"><option value="high">🔴 High</option><option value="med" selected>🟡 Med</option><option value="low">🔵 Low</option></select><select id="atf-s-${dept.id}"><option value="">Unassigned</option>${staff.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select></div><button class="atf-sub" style="background:${dept.color}" onclick="addTask('${dept.id}')">Add Task</button></div>`}
 else{h+=`<div class="arow"><button class="abtn" onclick="addingTo='${dept.id}';render();setTimeout(()=>{const el=document.getElementById('atf-t-${dept.id}');if(el)el.focus()},50)">+ Task</button><button class="msbtn" onclick="msForm='${dept.id}';render()">🏁</button><button class="dbtn" onclick="deleteDept('${dept.id}')">Del</button></div>`}
 h+=`</div></div></div>`});
-h+=`<button class="add-dept" onclick="activeModal='addDept';render()">+ Add Department</button><button class="rst" onclick="resetAll()">Reset to defaults</button><p class="foot">Saves automatically</p></div>`}
+h+=`<button class="add-dept" onclick="activeModal='addDept';render()">+ Add Department</button><button class="rst" onclick="resetAll()">Reset to defaults</button><p class="foot">${serverMode?'<span style="color:#22C55E">●</span> Server mode — data shared':'<span style="color:#F59E0B">●</span> Local mode — browser only'}</p></div>`}
 
 // ===== SERVICE USERS PAGE =====
 if(view==='sus'){
@@ -1102,7 +1152,6 @@ return match;
 if(suPageSort==='name')filtered.sort((a,b)=>a.name.localeCompare(b.name));
 else if(suPageSort==='flags')filtered.sort((a,b)=>(b.flags||[]).length-(a.flags||[]).length);
 else if(suPageSort==='postcode')filtered.sort((a,b)=>(a.pc||'').localeCompare(b.pc||''));
-else if(suPageSort==='days')filtered.sort((a,b)=>(b.days||[]).length-(a.days||[]).length);
 
 // Stats
 const flagCounts={};allFlags.forEach(f=>{flagCounts[f]=serviceUsers.filter(su=>(su.flags||[]).includes(f)).length});
@@ -1117,8 +1166,7 @@ h+=`</div>`;
 // Search + sort
 h+=`<div class="su-filter-bar">`;
 h+=`<input class="su-search" placeholder="🔍 Search name, postcode, carer, condition, flag..." value="${esc(suPageSearch)}" oninput="suPageSearch=this.value;render()">`;
-h+=`<select class="su-sort-btn" onchange="suPageSort=this.value;render()"><option value="name" ${suPageSort==='name'?'selected':''}>A→Z Name</option><option value="flags" ${suPageSort==='flags'?'selected':''}>Most Flags</option><option value="postcode" ${suPageSort==='postcode'?'selected':''}>Postcode</option><option value="days" ${suPageSort==='days'?'selected':''}>Most Days</option></select>`;
-h+=`<button onclick="suAttView=!suAttView;render()" style="border:1px solid ${suAttView?'#6366F1':'#E5E7EB'};background:${suAttView?'#EEF2FF':'white'};color:${suAttView?'#6366F1':'#6B7280'};border-radius:8px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">${suAttView?'📋 Cards':'📅 Attendance'}</button>`;
+h+=`<select class="su-sort-btn" onchange="suPageSort=this.value;render()"><option value="name" ${suPageSort==='name'?'selected':''}>A→Z Name</option><option value="flags" ${suPageSort==='flags'?'selected':''}>Most Flags</option><option value="postcode" ${suPageSort==='postcode'?'selected':''}>Postcode</option></select>`;
 h+=`</div>`;
 
 // Flag filter chips
@@ -1133,26 +1181,7 @@ h+=`</div>`;
 // Results count
 h+=`<div class="su-page-count">${filtered.length===serviceUsers.length?`All ${filtered.length} service users`:`${filtered.length} of ${serviceUsers.length} service users`}</div>`;
 
-// SU view - attendance grid or cards
-if(suAttView){
-const dayTotals={};DAYS.forEach(d=>{dayTotals[d]=filtered.filter(su=>(su.days||[]).includes(d)).length});
-h+=`<div class="att-grid"><table class="att-table"><thead><tr><th>Service User</th>`;
-DAYS.forEach(d=>{h+=`<th>${DAY_NAMES[d].slice(0,3)}<br><span style="font-size:9px;color:#9CA3AF;font-weight:500">${dayTotals[d]}</span></th>`});
-h+=`<th>Total</th></tr></thead><tbody>`;
-filtered.forEach(su=>{
-const days=su.days||[];
-h+=`<tr><td onclick="showSUDetail('${su.id}')" style="cursor:pointer">${esc(su.name)}</td>`;
-DAYS.forEach(d=>{
-const on=days.includes(d);
-h+=`<td><button class="att-check ${on?'on':'off'}" onclick="event.stopPropagation();toggleSUDay('${su.id}','${d}')">${on?'\u2713':''}</button></td>`;
-});
-h+=`<td style="font-weight:700;color:#6366F1">${days.length}</td></tr>`;
-});
-h+=`</tbody></table></div>`;
-h+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">`;
-DAYS.forEach(d=>{h+=`<div style="background:white;border-radius:10px;padding:8px 12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center;min-width:50px"><div style="font-size:18px;font-weight:700;color:#6366F1">${dayTotals[d]}</div><div style="font-size:10px;color:#6B7280;font-weight:600">${DAY_NAMES[d].slice(0,3)}</div></div>`});
-h+=`</div></div>`;
-} else {
+// SU Cards
 h+=`<div class="su-card-grid">`;
 filtered.forEach(su=>{
 h+=`<div class="su-card" onclick="showSUDetail('${su.id}')">`;
@@ -1161,7 +1190,6 @@ h+=`<div><div class="su-card-name">${esc(su.name)}</div>`;
 if(su.pn)h+=`<div class="su-card-pref">Prefers: "${esc(su.pn)}"</div>`;
 h+=`</div></div>`;
 if(su.flags&&su.flags.length)h+=`<div class="su-card-flags">${suFlagBadges(su.flags)}</div>`;
-if(su.days&&su.days.length)h+=`<div class="su-day-dots">${su.days.map(d=>'<span class="su-day-dot">'+DAY_NAMES[d].slice(0,3)+'</span>').join('')}</div>`;
 h+=`<div class="su-card-meta">`;
 if(su.dob)h+=`<span>${esc(su.dob)}</span>`;
 if(su.pc)h+=`<span>📍 ${esc(su.pc)}</span>`;
@@ -1171,7 +1199,6 @@ if(su.med)h+=`<span>🏥 ${esc(su.med.length>40?su.med.slice(0,40)+'…':su.med)
 h+=`</div></div>`;
 });
 h+=`</div></div>`;
-}
 }
 
 // ===== STAFF TAB =====

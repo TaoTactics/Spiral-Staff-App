@@ -1,0 +1,15 @@
+{
+  "name": "spiral-tracker-server",
+  "version": "1.0.0",
+  "description": "Spiral Sussex Tracker - SQLite backend",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "better-sqlite3": "^11.0.0",
+    "bcryptjs": "^2.4.3"
+  }
+}
