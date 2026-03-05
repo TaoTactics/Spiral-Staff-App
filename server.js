@@ -1,11 +1,26 @@
 const express = require('express');
 const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
+const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// ====== FILE UPLOAD SETUP ======
+const UPLOAD_DIR = path.join(__dirname, 'uploads');
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+    cb(null, Date.now() + '-' + safe);
+  }
+});
+const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } }); // 20MB max
 
 // ====== DATABASE SETUP ======
 const DB_PATH = path.join(__dirname, 'spiral-data.db');
@@ -31,6 +46,17 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS backups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     data TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename TEXT NOT NULL,
+    original_name TEXT NOT NULL,
+    category TEXT DEFAULT 'General',
+    department TEXT DEFAULT 'shared',
+    size INTEGER,
+    mime_type TEXT,
+    uploaded_by TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   );
 `);
@@ -184,6 +210,76 @@ app.delete('/api/users/:id', auth, (req, res) => {
   if (parseInt(req.params.id) === req.user.id) return res.status(400).json({ error: 'Cannot delete yourself' });
   db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
+});
+
+// ====== FILE MANAGEMENT ======
+
+// List files (optionally filter by department)
+app.get('/api/files', auth, (req, res) => {
+  try {
+    const dept = req.query.department;
+    let rows;
+    if (dept && dept !== 'all') {
+      rows = db.prepare("SELECT * FROM files WHERE department = ? OR department = 'shared' ORDER BY category, original_name").all(dept);
+    } else {
+      rows = db.prepare('SELECT * FROM files ORDER BY category, original_name').all();
+    }
+    res.json({ files: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Upload file
+app.post('/api/files', auth, upload.single('file'), (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const { category, department } = req.body;
+    db.prepare(
+      'INSERT INTO files (filename, original_name, category, department, size, mime_type, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(
+      req.file.filename,
+      req.file.originalname,
+      category || 'General',
+      department || 'shared',
+      req.file.size,
+      req.file.mimetype,
+      req.user.username
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Download file
+app.get('/api/files/:id/download', auth, (req, res) => {
+  try {
+    const file = db.prepare('SELECT * FROM files WHERE id = ?').get(req.params.id);
+    if (!file) return res.status(404).json({ error: 'File not found' });
+    const filePath = path.join(UPLOAD_DIR, file.filename);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing from disk' });
+    res.setHeader('Content-Disposition', 'attachment; filename="' + file.original_name + '"');
+    res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
+    res.sendFile(filePath);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete file (admin only)
+app.delete('/api/files/:id', auth, (req, res) => {
+  try {
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    const file = db.prepare('SELECT * FROM files WHERE id = ?').get(req.params.id);
+    if (!file) return res.status(404).json({ error: 'File not found' });
+    const filePath = path.join(UPLOAD_DIR, file.filename);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    db.prepare('DELETE FROM files WHERE id = ?').run(req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ====== FIRST-RUN SETUP ======

@@ -352,6 +352,16 @@ input:focus,textarea:focus,select:focus{border-color:#3A7BD5!important;box-shado
 .reg-sum-num{font-size:20px;font-weight:700}
 .reg-sum-lbl{font-size:10px;color:#6B7280;font-weight:600}
 .su-day-filter{font-size:10px;color:#6366F1;font-weight:600;margin-bottom:4px}
+.file-card{background:white;border-radius:10px;padding:10px 12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);margin-bottom:6px;display:flex;align-items:center;gap:10px}
+.file-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.file-info{flex:1;min-width:0}
+.file-name{font-size:13px;font-weight:600;color:#1F2937;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-meta{font-size:11px;color:#6B7280;margin-top:1px}
+.file-actions{display:flex;gap:4px}
+.file-btn{border:none;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer}
+.file-cat-hdr{font-size:12px;font-weight:700;color:#6366F1;text-transform:uppercase;letter-spacing:0.3px;margin:12px 0 6px;padding-bottom:4px;border-bottom:1px solid #EEF2FF}
+.file-upload-area{background:white;border:2px dashed #D1D5DB;border-radius:12px;padding:16px;text-align:center;margin-bottom:12px;cursor:pointer;transition:all 0.15s}
+.file-upload-area:hover{border-color:#6366F1;background:#F5F3FF}
 </style>
 </head>
 <body>
@@ -923,6 +933,58 @@ function fossAddContact(){fossData.contacts.push({id:'fc'+uid(),name:'',role:'',
 function fossUpdateContact(id,field,val){const c=fC().find(x=>x.id===id);if(c){c[field]=val;save()}}
 function fossDeleteContact(id){if(!confirm('Remove contact?'))return;fossData.contacts=fC().filter(c=>c.id!==id);save();render()}
 
+// ====== FILES FUNCTIONS ======
+let filesCache=[],filesLoaded=false,fileUploadCat='General',fileUploadDept='shared';
+const FILE_CATS=['Policies','Procedures','Forms','Training','Safeguarding','Health & Safety','HR','Finance','Minutes','Templates','General'];
+const FILE_ICONS={'application/pdf':'📄','image/jpeg':'🖼️','image/png':'🖼️','image/gif':'🖼️','application/msword':'📝','application/vnd.openxmlformats-officedocument.wordprocessingml.document':'📝','application/vnd.ms-excel':'📊','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':'📊','text/plain':'📃'};
+function fileIcon(mime){return FILE_ICONS[mime]||'📎'}
+function fileSize(bytes){if(bytes<1024)return bytes+'B';if(bytes<1048576)return(bytes/1024).toFixed(1)+'KB';return(bytes/1048576).toFixed(1)+'MB'}
+
+async function loadFiles(dept){
+if(!serverMode)return;
+try{
+const r=await fetch('/api/files?department='+(dept||'all'));
+if(!r.ok)throw 0;
+const json=await r.json();
+filesCache=json.files||[];
+filesLoaded=true;
+render();
+}catch{showToast('Failed to load files')}
+}
+
+async function uploadFile(){
+const input=document.createElement('input');
+input.type='file';
+input.accept='.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.jpg,.jpeg,.png,.gif,.csv';
+input.onchange=async()=>{
+const file=input.files[0];if(!file)return;
+const form=new FormData();
+form.append('file',file);
+form.append('category',fileUploadCat);
+form.append('department',fileUploadDept);
+try{
+showToast('Uploading...');
+const r=await fetch('/api/files',{method:'POST',body:form});
+if(!r.ok)throw 0;
+showToast('Uploaded ✓');
+loadFiles();
+}catch{showToast('Upload failed')}
+};
+input.click();
+}
+
+async function deleteFile(id){
+if(!confirm('Delete this file?'))return;
+try{
+const r=await fetch('/api/files/'+id,{method:'DELETE'});
+if(!r.ok){const j=await r.json();showToast(j.error||'Delete failed');return}
+showToast('Deleted');
+loadFiles();
+}catch{showToast('Delete failed')}
+}
+
+function downloadFile(id){window.open('/api/files/'+id+'/download','_blank')}
+
 // Register functions
 function regKey(wk,day,suId){return wk+'|'+day+'|'+suId}
 function getRegStatus(wk,day,suId){return registers[regKey(wk,day,suId)]||''}
@@ -1055,9 +1117,9 @@ if(appMode==='spiral'&&view==='depts'){h+=`<div class="ov-box"><div class="ov-ro
 
 // Tabs
 if(appMode==='spiral'){
-h+=`<div class="tabs"><button class="tab ${view==='depts'?'on':''}" onclick="view='depts';render()">📋 Tasks</button><button class="tab ${view==='sched'?'on':''}" onclick="view='sched';render()">📅 Schedule</button><button class="tab ${view==='regTab'?'on':''}" onclick="view='regTab';render()">📝 Register</button><button class="tab ${view==='sus'?'on':''}" onclick="view='sus';render()">👤 SUs</button><button class="tab ${view==='staffTab'?'on':''}" onclick="view='staffTab';render()">🧑‍💼 Staff</button><button class="tab ${view==='rotaTab'?'on':''}" onclick="view='rotaTab';render()">📊 Rota</button><button class="tab ${view==='dash'?'on':''}" onclick="view='dash';render()">📈 Dashboard</button><button class="tab ${view==='calTab'?'on':''}" onclick="view='calTab';render()">📆 Calendar</button><button class="tab ${view==='hist'?'on':''}" onclick="view='hist';render()">🕐 History</button></div></div>`;
+h+=`<div class="tabs"><button class="tab ${view==='depts'?'on':''}" onclick="view='depts';render()">📋 Tasks</button><button class="tab ${view==='sched'?'on':''}" onclick="view='sched';render()">📅 Schedule</button><button class="tab ${view==='regTab'?'on':''}" onclick="view='regTab';render()">📝 Register</button><button class="tab ${view==='sus'?'on':''}" onclick="view='sus';render()">👤 SUs</button><button class="tab ${view==='staffTab'?'on':''}" onclick="view='staffTab';render()">🧑‍💼 Staff</button><button class="tab ${view==='rotaTab'?'on':''}" onclick="view='rotaTab';render()">📊 Rota</button><button class="tab ${view==='dash'?'on':''}" onclick="view='dash';render()">📈 Dashboard</button><button class="tab ${view==='calTab'?'on':''}" onclick="view='calTab';render()">📆 Calendar</button><button class="tab ${view==='filesTab'?'on':''}" onclick="view='filesTab';loadFiles('spiral');render()">📁 Files</button><button class="tab ${view==='hist'?'on':''}" onclick="view='hist';render()">🕐 History</button></div></div>`;
 } else {
-h+=`<div class="tabs"><button class="tab ${fossView==='fossTasks'?'on':''}" onclick="fossView='fossTasks';render()">📋 Tasks</button><button class="tab ${fossView==='fossStaff'?'on':''}" onclick="fossView='fossStaff';render()">🧑‍💼 Team</button><button class="tab ${fossView==='fossContacts'?'on':''}" onclick="fossView='fossContacts';render()">📇 Contacts</button><button class="tab ${fossView==='fossSUs'?'on':''}" onclick="fossView='fossSUs';render()">👤 SUs</button><button class="tab ${fossView==='fossLog'?'on':''}" onclick="fossView='fossLog';render()">✅ Log</button><button class="tab ${fossView==='fossCal'?'on':''}" onclick="fossView='fossCal';render()">📆 Calendar</button></div></div>`;
+h+=`<div class="tabs"><button class="tab ${fossView==='fossTasks'?'on':''}" onclick="fossView='fossTasks';render()">📋 Tasks</button><button class="tab ${fossView==='fossStaff'?'on':''}" onclick="fossView='fossStaff';render()">🧑‍💼 Team</button><button class="tab ${fossView==='fossContacts'?'on':''}" onclick="fossView='fossContacts';render()">📇 Contacts</button><button class="tab ${fossView==='fossSUs'?'on':''}" onclick="fossView='fossSUs';render()">👤 SUs</button><button class="tab ${fossView==='fossLog'?'on':''}" onclick="fossView='fossLog';render()">✅ Log</button><button class="tab ${fossView==='fossFiles'?'on':''}" onclick="fossView='fossFiles';loadFiles('foss');render()">📁 Files</button><button class="tab ${fossView==='fossCal'?'on':''}" onclick="fossView='fossCal';render()">📆 Calendar</button></div></div>`;
 }
 
 if(appMode==='spiral'){
@@ -1703,6 +1765,45 @@ h+=`<div style="margin-top:8px;font-size:11px;color:#9CA3AF;text-align:center">R
 h+=`</div>`;
 }
 
+// ===== FILES TAB =====
+if(view==='filesTab'){
+h+=`<div style="padding:0 12px 100px">`;
+h+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div style="font-size:15px;font-weight:700;color:#1F2937">📁 Shared Files</div></div>`;
+if(!serverMode){
+h+=`<div style="text-align:center;padding:32px;color:#9CA3AF"><p>File storage requires server mode</p><p style="font-size:12px">Deploy to the VPS to enable file uploads</p></div>`;
+} else {
+// Upload area
+h+=`<div class="file-upload-area" onclick="uploadFile()">`;
+h+=`<div style="font-size:24px;margin-bottom:4px">📤</div>`;
+h+=`<div style="font-size:13px;font-weight:600;color:#374151">Click to upload a file</div>`;
+h+=`<div style="font-size:11px;color:#9CA3AF">PDF, Word, Excel, Images · Max 20MB</div>`;
+h+=`</div>`;
+h+=`<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">`;
+h+=`<select onchange="fileUploadCat=this.value" style="border:1px solid #E5E7EB;border-radius:8px;padding:6px 10px;font-size:11px;color:#374151">`;
+FILE_CATS.forEach(c=>{h+=`<option value="${c}" ${fileUploadCat===c?'selected':''}>${c}</option>`});
+h+=`</select>`;
+h+=`<select onchange="fileUploadDept=this.value" style="border:1px solid #E5E7EB;border-radius:8px;padding:6px 10px;font-size:11px;color:#374151"><option value="shared" ${fileUploadDept==='shared'?'selected':''}>Shared (both)</option><option value="spiral" ${fileUploadDept==='spiral'?'selected':''}>Spiral only</option><option value="foss" ${fileUploadDept==='foss'?'selected':''}>FOSS only</option></select>`;
+h+=`</div>`;
+// File list grouped by category
+const grouped={};filesCache.forEach(f=>{const cat=f.category||'General';if(!grouped[cat])grouped[cat]=[];grouped[cat].push(f)});
+const cats=Object.keys(grouped).sort();
+if(!cats.length&&filesLoaded)h+=`<div style="text-align:center;padding:24px;color:#9CA3AF"><p>No files uploaded yet</p></div>`;
+cats.forEach(cat=>{
+h+=`<div class="file-cat-hdr">${esc(cat)} (${grouped[cat].length})</div>`;
+grouped[cat].forEach(f=>{
+const bg=f.department==='shared'?'#EEF2FF':f.department==='foss'?'#ECFDF5':'#F5F3FF';
+h+=`<div class="file-card">`;
+h+=`<div class="file-icon" style="background:${bg}">${fileIcon(f.mime_type)}</div>`;
+h+=`<div class="file-info"><div class="file-name">${esc(f.original_name)}</div>`;
+h+=`<div class="file-meta">${fileSize(f.size)} · ${esc(f.uploaded_by||'')} · ${f.created_at?f.created_at.split('T')[0]:''} · <span style="color:${f.department==='shared'?'#6366F1':f.department==='foss'?'#10B981':'#8B5CF6'}">${f.department}</span></div></div>`;
+h+=`<div class="file-actions"><button class="file-btn" style="background:#EEF2FF;color:#6366F1" onclick="downloadFile(${f.id})">⬇️</button><button class="file-btn" style="background:#FEF2F2;color:#DC2626" onclick="deleteFile(${f.id})">🗑</button></div>`;
+h+=`</div>`;
+});
+});
+}
+h+=`</div>`;
+}
+
 // ===== HISTORY =====
 if(view==='hist'){
 h+=`<div class="hist-section"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div class="dash-title" style="margin:0">History</div><button onclick="takeSnapshot()" style="border:none;background:#1F2937;color:white;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer">📸 Snapshot</button></div>`;
@@ -1842,6 +1943,43 @@ log.forEach(l=>{
 h+=`<div class="dash-card" style="margin-bottom:6px"><div style="display:flex;justify-content:space-between;align-items:start"><div style="flex:1"><div style="font-size:13px;font-weight:600;color:#1F2937">${esc(l.text)}</div><div style="font-size:11px;color:#6B7280;margin-top:2px">${esc(l.dept)} · ${esc(l.assignee)}</div></div><div style="font-size:10px;color:#9CA3AF;white-space:nowrap">${fmtDateTime(l.completedAt)}</div></div></div>`;
 });
 if(log.length>10)h+=`<button onclick="if(confirm('Clear completed log?')){fossData.completedLog=[];save();render()}" style="width:100%;border:none;background:none;font-size:11px;color:#BCBAB5;padding:8px;cursor:pointer">Clear log</button>`;
+}
+h+=`</div>`;
+}
+
+// ===== FOSS FILES =====
+if(fossView==='fossFiles'){
+h+=`<div style="padding:0 12px 100px">`;
+h+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div style="font-size:15px;font-weight:700;color:#1F2937">📁 Shared Files</div></div>`;
+if(!serverMode){
+h+=`<div style="text-align:center;padding:32px;color:#9CA3AF"><p>File storage requires server mode</p></div>`;
+} else {
+h+=`<div class="file-upload-area" onclick="uploadFile()">`;
+h+=`<div style="font-size:24px;margin-bottom:4px">📤</div>`;
+h+=`<div style="font-size:13px;font-weight:600;color:#374151">Click to upload a file</div>`;
+h+=`<div style="font-size:11px;color:#9CA3AF">PDF, Word, Excel, Images · Max 20MB</div>`;
+h+=`</div>`;
+h+=`<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">`;
+h+=`<select onchange="fileUploadCat=this.value" style="border:1px solid #E5E7EB;border-radius:8px;padding:6px 10px;font-size:11px;color:#374151">`;
+FILE_CATS.forEach(c=>{h+=`<option value="${c}" ${fileUploadCat===c?'selected':''}>${c}</option>`});
+h+=`</select>`;
+h+=`<select onchange="fileUploadDept=this.value" style="border:1px solid #E5E7EB;border-radius:8px;padding:6px 10px;font-size:11px;color:#374151"><option value="shared" ${fileUploadDept==='shared'?'selected':''}>Shared (both)</option><option value="foss" ${fileUploadDept==='foss'?'selected':''}>FOSS only</option><option value="spiral" ${fileUploadDept==='spiral'?'selected':''}>Spiral only</option></select>`;
+h+=`</div>`;
+const grouped={};filesCache.forEach(f=>{const cat=f.category||'General';if(!grouped[cat])grouped[cat]=[];grouped[cat].push(f)});
+const cats=Object.keys(grouped).sort();
+if(!cats.length&&filesLoaded)h+=`<div style="text-align:center;padding:24px;color:#9CA3AF"><p>No files uploaded yet</p></div>`;
+cats.forEach(cat=>{
+h+=`<div class="file-cat-hdr">${esc(cat)} (${grouped[cat].length})</div>`;
+grouped[cat].forEach(f=>{
+const bg=f.department==='shared'?'#EEF2FF':f.department==='foss'?'#ECFDF5':'#F5F3FF';
+h+=`<div class="file-card">`;
+h+=`<div class="file-icon" style="background:${bg}">${fileIcon(f.mime_type)}</div>`;
+h+=`<div class="file-info"><div class="file-name">${esc(f.original_name)}</div>`;
+h+=`<div class="file-meta">${fileSize(f.size)} · ${esc(f.uploaded_by||'')} · ${f.created_at?f.created_at.split('T')[0]:''}</div></div>`;
+h+=`<div class="file-actions"><button class="file-btn" style="background:#ECFDF5;color:#10B981" onclick="downloadFile(${f.id})">⬇️</button><button class="file-btn" style="background:#FEF2F2;color:#DC2626" onclick="deleteFile(${f.id})">🗑</button></div>`;
+h+=`</div>`;
+});
+});
 }
 h+=`</div>`;
 }
