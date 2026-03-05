@@ -316,6 +316,42 @@ input:focus,textarea:focus,select:focus{border-color:#3A7BD5!important;box-shado
 .toast.visible{opacity:1;transform:translateX(-50%) translateY(0)}
 
 @media print{body{background:white!important}.hdr,.fbar,.toast,.arow,.tbtn,.reord,.ms-del,.note-form,.tedit,.atf,.add-dept,.rst,.foot,.tabs,.hdr-actions,.sync-bar,.sess-actions,.sess-add,.su-panel,.su-toggle,.rota-edit-popup,.staff-profile-body{display:none!important}.tpanel{max-height:none!important;overflow:visible!important}.card{break-inside:avoid;box-shadow:none;border:1px solid #ddd;margin-bottom:8px}.mov{display:none!important}.cards,.sched{padding:0 8px}.print-hdr{display:block!important}.day-card{break-inside:avoid}}
+.su-days-row{display:flex;gap:4px;margin-top:8px;flex-wrap:wrap}
+.su-day-tog{width:36px;height:28px;border-radius:6px;border:1.5px solid #E5E7EB;background:white;cursor:pointer;font-size:10px;font-weight:700;color:#9CA3AF;display:flex;align-items:center;justify-content:center;transition:all 0.15s}
+.su-day-tog.on{background:#6366F1;color:white;border-color:#6366F1}
+.su-day-dots{display:flex;gap:2px;margin-top:4px}
+.su-day-dot{font-size:9px;font-weight:700;padding:1px 4px;border-radius:4px;background:#EEF2FF;color:#6366F1}
+.att-grid{background:white;border-radius:12px;padding:12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);margin-bottom:12px;overflow-x:auto}
+.att-table{width:100%;border-collapse:collapse;font-size:12px}
+.att-table th{padding:6px 8px;font-weight:700;font-size:10px;text-transform:uppercase;color:#6B7280;background:#F9FAFB;border-bottom:2px solid #E5E7EB;text-align:center}
+.att-table th:first-child{text-align:left;min-width:140px}
+.att-table td{padding:5px 8px;border-bottom:1px solid #F3F4F6;text-align:center}
+.att-table td:first-child{text-align:left;font-weight:600;font-size:12px;color:#1F2937}
+.att-table tr:hover{background:#F9FAFB}
+.att-check{width:20px;height:20px;border-radius:6px;border:none;cursor:pointer;font-size:12px;display:inline-flex;align-items:center;justify-content:center}
+.att-check.on{background:#6366F1;color:white}
+.att-check.off{background:#F3F4F6;color:#D1D5DB}
+.reg-day-card{background:white;border-radius:12px;padding:12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);margin-bottom:10px}
+.reg-day-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #F3F4F6}
+.reg-day-title{font-size:14px;font-weight:700;color:#1F2937}
+.reg-day-count{font-size:11px;color:#6B7280;font-weight:600}
+.reg-sess-title{font-size:11px;font-weight:700;color:#6366F1;margin:8px 0 4px;text-transform:uppercase;letter-spacing:0.3px}
+.reg-row{display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid #F9FAFB;font-size:13px}
+.reg-row:last-child{border:none}
+.reg-name{flex:1;font-weight:500;color:#1F2937;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.reg-status{display:flex;gap:3px}
+.reg-btn{width:28px;height:28px;border-radius:6px;border:1.5px solid #E5E7EB;background:white;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;transition:all 0.15s}
+.reg-btn.active-p{background:#22C55E;border-color:#22C55E;color:white}
+.reg-btn.active-a{background:#EF4444;border-color:#EF4444;color:white}
+.reg-btn.active-l{background:#F59E0B;border-color:#F59E0B;color:white}
+.reg-btn.active-h{background:#3B82F6;border-color:#3B82F6;color:white}
+.reg-note{width:90px;border:1px solid #E5E7EB;border-radius:6px;padding:4px 6px;font-size:11px;color:#374151}
+.reg-unassigned{background:#FEF3C7;border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12px;color:#92400E}
+.reg-summary{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.reg-sum-card{background:white;border-radius:10px;padding:8px 14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center;flex:1;min-width:60px}
+.reg-sum-num{font-size:20px;font-weight:700}
+.reg-sum-lbl{font-size:10px;color:#6B7280;font-weight:600}
+.su-day-filter{font-size:10px;color:#6366F1;font-weight:600;margin-bottom:4px}
 </style>
 </head>
 <body>
@@ -565,13 +601,17 @@ const DEFS={staff:['Jamie','Sarah','Mike','Priya','Alex'],departments:[
 ],history:[],schedule:null};
 
 let D=[],staff=[],history=[],schedule=[],serviceUsers=[],openD={},addingTo=null,editingT=null,notesOpen={},activeModal=null,view='depts';
+let appMode='spiral'; // 'spiral' or 'foss'
+let fossData={departments:[],staffProfiles:[],contacts:[],completedLog:[]};
+let fossView='fossTasks',fossOpenD={},fossAddingTo=null,fossEditingT=null,fossNotesOpen={},fossFilterPri='all',fossFilterStaff='all',fossEditingStaff=null,fossNewStaff='',fossEditingContact=null;
 let newD={name:'',emoji:'📋',color:'#3A7BD5'},newStaff='',importTxt='',toastMsg='',toastTmr=null;
 let filterPri='all',filterStaff='all',msForm=null;
 let syncCfg={url:'',autoSync:false,lastSync:null},syncStatus='disconnected',syncDebounce=null;
 let openDays={mon:true,tue:true,wed:true,thu:true,fri:true};
 let editingSess=null,expandedSess={},suSearch='',addingStaffTo=null,viewingSU=null;
 let schedWeekOffset=0,weekSchedules={};
-let suPageSearch='',suPageFlags=[],suPageSort='name';
+let registers={},regWeekOffset=0;
+let suPageSearch='',suPageFlags=[],suPageSort='name',suAttView=false;
 let staffProfiles=[],rota={},driverRota={},editingStaffId=null,rotaEditCell=null,driverEditCell=null;
 let rotaWeekOffset=0,rotaSubTab='rooms';
 
@@ -610,6 +650,7 @@ return '<span class="su-flag '+cls+'" title="'+title+'">'+esc(f)+'</span>';
 }
 function showSUDetail(suId){viewingSU=suId;render()}
 function closeSUDetail(){viewingSU=null;render()}
+function toggleSUDay(suId,day){const su=serviceUsers.find(u=>u.id===suId);if(!su)return;if(!su.days)su.days=[];const idx=su.days.indexOf(day);if(idx>=0)su.days.splice(idx,1);else su.days.push(day);save();render()}
 function renderSUDetailModal(){
 const su=serviceUsers.find(u=>u.id===viewingSU);
 if(!su)return'';
@@ -652,6 +693,17 @@ h+=`<div class="su-detail-section"><h4>💡 Behaviour & Communication</h4>`;
 if(su.beh)h+=`<div class="su-detail-row"><span class="lbl">Behaviour</span><span class="val">${esc(su.beh)}</span></div>`;
 if(su.comm)h+=`<div class="su-detail-row"><span class="lbl">Comms</span><span class="val">${esc(su.comm)}</span></div>`;
 h+=`</div>`}
+// Attendance Days
+h+=`<div class="su-detail-section"><h4>📅 Scheduled Days</h4><div class="su-days-row">`;
+DAYS.forEach(d=>{
+const isOn=(su.days||[]).includes(d);
+if(appMode==='foss'){
+h+=`<span class="su-day-tog ${isOn?'on':''}" style="cursor:default">${DAY_NAMES[d].slice(0,3)}</span>`;
+} else {
+h+=`<button class="su-day-tog ${isOn?'on':''}" onclick="event.stopPropagation();toggleSUDay('${su.id}','${d}')">${DAY_NAMES[d].slice(0,3)}</button>`;
+}
+});
+h+=`</div></div>`;
 h+=`</div></div>`;
 return h;
 }
@@ -673,7 +725,7 @@ return s;
 let serverMode=false; // true if running on server
 let saveDebounce=null;
 
-function getDataObj(){return {departments:D,staff,history,schedule,serviceUsers,staffProfiles,rota,driverRota,weekSchedules}}
+function getDataObj(){return {departments:D,staff,history,schedule,serviceUsers,staffProfiles,rota,driverRota,weekSchedules,registers,fossData}}
 
 function load(){
 // Detect if we're on the server (not file:// or github.io)
@@ -706,9 +758,11 @@ staffProfiles=d.staffProfiles||JSON.parse(JSON.stringify(DEF_STAFF_PROFILES));
 rota=d.rota||{};
 driverRota=d.driverRota||{};
 weekSchedules=d.weekSchedules||{};
+registers=d.registers||{};
+fossData=d.fossData||{departments:[],staffProfiles:[],contacts:[],completedLog:[]};
 saveToLS();return;
 }
-D=JSON.parse(JSON.stringify(DEFS.departments));staff=[...DEFS.staff];history=[];schedule=JSON.parse(JSON.stringify(DEF_SCHEDULE));serviceUsers=JSON.parse(JSON.stringify(DEF_SUS));staffProfiles=JSON.parse(JSON.stringify(DEF_STAFF_PROFILES));rota={};driverRota={};weekSchedules={};
+D=JSON.parse(JSON.stringify(DEFS.departments));staff=[...DEFS.staff];history=[];schedule=JSON.parse(JSON.stringify(DEF_SCHEDULE));serviceUsers=JSON.parse(JSON.stringify(DEF_SUS));staffProfiles=JSON.parse(JSON.stringify(DEF_STAFF_PROFILES));rota={};driverRota={};weekSchedules={};registers={};fossData={departments:[],staffProfiles:[],contacts:[],completedLog:[]};
 }
 
 function applyData(d){
@@ -721,6 +775,9 @@ staffProfiles=d.staffProfiles||JSON.parse(JSON.stringify(DEF_STAFF_PROFILES));
 rota=d.rota||{};
 driverRota=d.driverRota||{};
 weekSchedules=d.weekSchedules||{};
+registers=d.registers||{};
+fossData=d.fossData||{departments:[],staffProfiles:[],contacts:[],completedLog:[]};
+staff=staffProfiles.map(p=>p.name);
 }
 
 async function serverLoad(){
@@ -745,6 +802,7 @@ return true;
 }
 
 function save(){
+staff=staffProfiles.map(p=>p.name);
 saveToLS();
 if(serverMode){
 clearTimeout(saveDebounce);
@@ -838,6 +896,67 @@ if(idx>=0)s.assignedSUs.splice(idx,1);else s.assignedSUs.push(suId);
 save();render();
 }
 
+// ====== FOSS FUNCTIONS ======
+function switchMode(m){appMode=m;if(m==='foss'&&!fossView)fossView='fossTasks';render()}
+function fD(){return fossData.departments}
+function fSP(){return fossData.staffProfiles}
+function fC(){return fossData.contacts}
+function fStaff(){return fSP().map(p=>p.name)}
+
+// FOSS Tasks
+function fossAddDept(){const n=prompt('Department name:');if(!n)return;fossData.departments.push({id:uid(),name:n.trim(),emoji:'📁',color:'#6366F1',tasks:[],rag:'none',milestones:[]});save();render()}
+function fossDeleteDept(id){if(!confirm('Delete department?'))return;fossData.departments=fossData.departments.filter(d=>d.id!==id);save();render()}
+function fossToggleTask(dId,tId){const d=fD().find(x=>x.id===dId);if(d){const t=d.tasks.find(x=>x.id===tId);if(t){t.done=!t.done;if(t.done){fossData.completedLog.push({text:t.text,dept:d.name,assignee:t.assignee||'Unassigned',completedAt:new Date().toISOString()});if(fossData.completedLog.length>200)fossData.completedLog=fossData.completedLog.slice(-200)}}}save();render()}
+function fossDeleteTask(dId,tId){const d=fD().find(x=>x.id===dId);if(d)d.tasks=d.tasks.filter(t=>t.id!==tId);save();render()}
+function fossUpdateTF(dId,tId,f,v){const d=fD().find(x=>x.id===dId);if(d){const t=d.tasks.find(x=>x.id===tId);if(t)t[f]=v}save();render()}
+function fossAddTask(dId){const d=fD().find(x=>x.id===dId);if(!d)return;const inp=document.getElementById('fatf-t-'+dId);const pri=document.getElementById('fatf-p-'+dId);const stf=document.getElementById('fatf-s-'+dId);const txt=inp?.value?.trim();if(!txt)return;d.tasks.push({id:uid(),text:txt,done:false,priority:pri?.value||'med',assignee:stf?.value||'',notes:[]});fossAddingTo=null;save();render();showToast('Added')}
+function fossSetRag(dId,val){const d=fD().find(x=>x.id===dId);if(d){d.rag=d.rag===val?'none':val;save();render()}}
+function fossAddNote(dId,tId){const inp=document.getElementById('fn-'+tId);const txt=inp?.value?.trim();if(!txt)return;const d=fD().find(x=>x.id===dId);if(!d)return;const t=d.tasks.find(x=>x.id===tId);if(!t)return;if(!t.notes)t.notes=[];t.notes.push({id:uid(),text:txt,ts:new Date().toISOString()});save();render()}
+
+// FOSS Staff
+function fossAddStaff(){const n=prompt('Staff name:');if(!n||fSP().some(p=>p.name===n.trim()))return;const colors=['#6366F1','#EC4899','#F59E0B','#10B981','#3B82F6','#8B5CF6','#EF4444','#14B8A6'];fossData.staffProfiles.push({id:'fp'+uid(),name:n.trim(),role:'Volunteer',phone:'',email:'',notes:'',color:colors[fSP().length%colors.length]});save();render()}
+function fossUpdateStaff(id,field,val){const p=fSP().find(s=>s.id===id);if(p){p[field]=val;save();render()}}
+function fossRemoveStaff(id){if(!confirm('Remove staff member?'))return;fossData.staffProfiles=fSP().filter(s=>s.id!==id);save();render()}
+
+// FOSS Contacts
+function fossAddContact(){fossData.contacts.push({id:'fc'+uid(),name:'',role:'',phone:'',email:'',org:'',notes:''});fossEditingContact=fossData.contacts[fossData.contacts.length-1].id;save();render()}
+function fossUpdateContact(id,field,val){const c=fC().find(x=>x.id===id);if(c){c[field]=val;save()}}
+function fossDeleteContact(id){if(!confirm('Remove contact?'))return;fossData.contacts=fC().filter(c=>c.id!==id);save();render()}
+
+// Register functions
+function regKey(wk,day,suId){return wk+'|'+day+'|'+suId}
+function getRegStatus(wk,day,suId){return registers[regKey(wk,day,suId)]||''}
+function setRegStatus(wk,day,suId,status){
+const k=regKey(wk,day,suId);
+const current=(registers[k]||'').split(':')[0];
+const note=(registers[k]||'').split(':').slice(1).join(':');
+if(current===status){delete registers[k]}
+else{registers[k]=status+(note?':'+note:'');}
+save();render();
+}
+function setRegNote(wk,day,suId,note){
+const k=regKey(wk,day,suId);
+const base=(registers[k]||'').split(':')[0]||'expected';
+registers[k]=note?base+':'+note:base;
+save();
+}
+function getRegNote(wk,day,suId){return (getRegStatus(wk,day,suId).split(':').slice(1).join(':')||'')}
+function getRegStat(wk,day,suId){return (getRegStatus(wk,day,suId).split(':')[0]||'')}
+function populateRegFromSchedule(wk){
+// Get the schedule for this week
+const activeSchd=weekSchedules[wk]||schedule;
+DAYS.forEach(day=>{
+const daySessions=activeSchd.filter(s=>s.day===day);
+daySessions.forEach(s=>{
+(s.assignedSUs||[]).forEach(suId=>{
+const k=regKey(wk,day,suId);
+if(!registers[k])registers[k]='expected';
+});
+});
+});
+save();
+}
+
 // Dept actions
 function toggleTask(dId,tId){const d=D.find(x=>x.id===dId);if(d){const t=d.tasks.find(x=>x.id===tId);if(t)t.done=!t.done}save();render()}
 function deleteTask(dId,tId){const d=D.find(x=>x.id===dId);if(d)d.tasks=d.tasks.filter(t=>t.id!==tId);save();render()}
@@ -851,13 +970,13 @@ function moveDown(id){const i=D.findIndex(d=>d.id===id);if(i<D.length-1){[D[i+1]
 function setRag(id,r){const d=D.find(x=>x.id===id);if(d){d.rag=d.rag===r?'none':r;save();render()}}
 function addMilestone(dId){const d=D.find(x=>x.id===dId);if(!d)return;const txt=document.getElementById('ms-txt-'+dId)?.value?.trim();const dt=document.getElementById('ms-dt-'+dId)?.value;if(!txt||!dt)return;if(!d.milestones)d.milestones=[];d.milestones.push({id:uid(),text:txt,date:dt});msForm=null;save();render()}
 function delMilestone(dId,mId){const d=D.find(x=>x.id===dId);if(d)d.milestones=(d.milestones||[]).filter(m=>m.id!==mId);save();render()}
-function addStaffMember(){const n=newStaff.trim();if(!n||staff.includes(n))return;staff.push(n);newStaff='';save();render();showToast('Added '+n)}
-function removeStaffMember(n){if(!confirm('Remove '+n+'?'))return;staff=staff.filter(s=>s!==n);save();render()}
+function addStaffMember(){const n=newStaff.trim();if(!n||staffProfiles.some(p=>p.name===n))return;const colors=['#6366F1','#EC4899','#F59E0B','#10B981','#3B82F6','#8B5CF6','#EF4444','#14B8A6','#F97316','#06B6D4'];staffProfiles.push({id:'sp'+uid(),name:n,role:'Support Worker',phone:'',email:'',emergency:'',notes:'',color:colors[staffProfiles.length%colors.length]});newStaff='';save();render();showToast('Added '+n)}
+function removeStaffMember(n){if(!confirm('Remove '+n+'?'))return;staffProfiles=staffProfiles.filter(p=>p.name!==n);save();render()}
 function takeSnapshot(){const overall=pct(D.reduce((a,d)=>a+d.tasks.filter(t=>t.done).length,0),D.reduce((a,d)=>a+d.tasks.length,0));const depts=D.map(d=>({name:d.name,color:d.color,rag:d.rag||'none',pct:pct(d.tasks.filter(t=>t.done).length,d.tasks.length)}));history.push({date:new Date().toISOString(),overall,depts});save();render();showToast('Snapshot saved')}
 function copyAppsScript(){navigator.clipboard.writeText(APPS_SCRIPT_CODE).then(()=>showToast('Copied!'))}
 function copyForSheets(){const rows=[['Department','Task','Priority','Assignee','Status','Notes']];D.forEach(d=>d.tasks.forEach(t=>rows.push([d.name,t.text,t.priority,t.assignee||'',t.done?'Done':'To Do',(t.notes||[]).map(n=>n.text).join('; ')])));navigator.clipboard.writeText(rows.map(r=>r.join('\t')).join('\n')).then(()=>showToast('Copied!'))}
 function downloadCSV(){const rows=[['Department','Task','Priority','Assignee','Status']];D.forEach(d=>d.tasks.forEach(t=>rows.push([d.name,t.text,t.priority,t.assignee||'',t.done?'Done':'To Do'])));const csv=rows.map(r=>r.map(c=>'"'+c.replace(/"/g,'""')+'"').join(',')).join('\n');const b=new Blob([csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='spiral-tasks.csv';a.click();showToast('Downloaded')}
-function resetAll(){if(!confirm('Reset everything?'))return;D=JSON.parse(JSON.stringify(DEFS.departments));staff=[...DEFS.staff];history=[];schedule=JSON.parse(JSON.stringify(DEF_SCHEDULE));serviceUsers=JSON.parse(JSON.stringify(DEF_SUS));staffProfiles=JSON.parse(JSON.stringify(DEF_STAFF_PROFILES));rota={};driverRota={};weekSchedules={};openD={};filterPri='all';filterStaff='all';save();render();showToast('Reset')}
+function resetAll(){if(!confirm('Reset everything?'))return;D=JSON.parse(JSON.stringify(DEFS.departments));staff=[...DEFS.staff];history=[];schedule=JSON.parse(JSON.stringify(DEF_SCHEDULE));serviceUsers=JSON.parse(JSON.stringify(DEF_SUS));staffProfiles=JSON.parse(JSON.stringify(DEF_STAFF_PROFILES));rota={};driverRota={};weekSchedules={};registers={};fossData={departments:[],staffProfiles:[],contacts:[],completedLog:[]};openD={};filterPri='all';filterStaff='all';save();render();showToast('Reset')}
 
 // Staff profile helpers
 function getStaffProfile(name){return staffProfiles.find(p=>p.name===name)}
@@ -925,17 +1044,23 @@ const allTotal=D.reduce((a,d)=>a+d.tasks.length,0);
 const overall=pct(allDone,allTotal);
 
 // HEADER
-h+=`<div class="hdr"><div class="hdr-top"><div class="hdr-brand"><h1>🌀 Spiral Sussex</h1><small>Tracker</small></div><div class="hdr-actions"><button class="hdr-btn" onclick="activeModal='staff';render()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></button><button class="hdr-btn" onclick="activeModal='sync';render()">🔄</button><button class="hdr-btn" onclick="activeModal='sheets';render()">📤</button><button class="hdr-btn" onclick="document.getElementById('print-date').textContent=new Date().toLocaleDateString('en-GB',{weekday:'long',year:'numeric',month:'long',day:'numeric'});window.print()">🖨</button></div></div>`;
+h+=`<div class="hdr"><div class="hdr-top"><div class="hdr-brand"><h1>${appMode==='foss'?'🤝 FOSS':'🌀 Spiral Sussex'}</h1><small>${appMode==='foss'?'Friends of Spiral Sussex':'Tracker'}</small></div><div class="hdr-actions"><button class="hdr-btn" style="${appMode==='foss'?'background:#10B981;color:white':'background:#6366F1;color:white'};font-size:10px;font-weight:700;width:auto;padding:0 10px;border-radius:8px" onclick="switchMode(appMode==='spiral'?'foss':'spiral')">${appMode==='foss'?'SPIRAL':'FOSS'}</button><button class="hdr-btn" onclick="activeModal='staff';render()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></button><button class="hdr-btn" onclick="activeModal='sync';render()">🔄</button><button class="hdr-btn" onclick="activeModal='sheets';render()">📤</button><button class="hdr-btn" onclick="document.getElementById('print-date').textContent=new Date().toLocaleDateString('en-GB',{weekday:'long',year:'numeric',month:'long',day:'numeric'});window.print()">🖨</button></div></div>`;
 
 // Sync bar
 const sc=syncStatus;const hasUrl=!!syncCfg.url;
 h+=`<div class="sync-bar ${sc}"><div class="sync-dot ${sc==='connected'?'green':sc==='error'?'red':sc==='syncing'?'blue':'grey'}"></div>${sc==='connected'?'Synced'+(syncCfg.lastSync?' · '+fmtDateTime(syncCfg.lastSync):''):sc==='syncing'?'Syncing...':sc==='error'?'Sync error':hasUrl?'Not synced':'Not connected'}${hasUrl?'<button onclick=\"pushToSheet()\">Push</button>':''}</div>`;
 
-// Overview
-h+=`<div class="ov-box"><div class="ov-row"><span class="ov-lbl">Overall Progress</span><span class="ov-pct">${overall}%</span></div><div class="ov-bar"><div class="ov-fill" style="width:${overall}%"></div></div></div>`;
+// Overview (Spiral only)
+if(appMode==='spiral'&&view==='depts'){h+=`<div class="ov-box"><div class="ov-row"><span class="ov-lbl">Overall Progress</span><span class="ov-pct">${overall}%</span></div><div class="ov-bar"><div class="ov-fill" style="width:${overall}%"></div></div></div>`};
 
 // Tabs
-h+=`<div class="tabs"><button class="tab ${view==='depts'?'on':''}" onclick="view='depts';render()">📋 Tasks</button><button class="tab ${view==='sched'?'on':''}" onclick="view='sched';render()">📅 Schedule</button><button class="tab ${view==='sus'?'on':''}" onclick="view='sus';render()">👤 SUs</button><button class="tab ${view==='staffTab'?'on':''}" onclick="view='staffTab';render()">🧑‍💼 Staff</button><button class="tab ${view==='rotaTab'?'on':''}" onclick="view='rotaTab';render()">📊 Rota</button><button class="tab ${view==='dash'?'on':''}" onclick="view='dash';render()">📈 Dashboard</button><button class="tab ${view==='hist'?'on':''}" onclick="view='hist';render()">🕐 History</button></div></div>`;
+if(appMode==='spiral'){
+h+=`<div class="tabs"><button class="tab ${view==='depts'?'on':''}" onclick="view='depts';render()">📋 Tasks</button><button class="tab ${view==='sched'?'on':''}" onclick="view='sched';render()">📅 Schedule</button><button class="tab ${view==='regTab'?'on':''}" onclick="view='regTab';render()">📝 Register</button><button class="tab ${view==='sus'?'on':''}" onclick="view='sus';render()">👤 SUs</button><button class="tab ${view==='staffTab'?'on':''}" onclick="view='staffTab';render()">🧑‍💼 Staff</button><button class="tab ${view==='rotaTab'?'on':''}" onclick="view='rotaTab';render()">📊 Rota</button><button class="tab ${view==='dash'?'on':''}" onclick="view='dash';render()">📈 Dashboard</button><button class="tab ${view==='calTab'?'on':''}" onclick="view='calTab';render()">📆 Calendar</button><button class="tab ${view==='hist'?'on':''}" onclick="view='hist';render()">🕐 History</button></div></div>`;
+} else {
+h+=`<div class="tabs"><button class="tab ${fossView==='fossTasks'?'on':''}" onclick="fossView='fossTasks';render()">📋 Tasks</button><button class="tab ${fossView==='fossStaff'?'on':''}" onclick="fossView='fossStaff';render()">🧑‍💼 Team</button><button class="tab ${fossView==='fossContacts'?'on':''}" onclick="fossView='fossContacts';render()">📇 Contacts</button><button class="tab ${fossView==='fossSUs'?'on':''}" onclick="fossView='fossSUs';render()">👤 SUs</button><button class="tab ${fossView==='fossLog'?'on':''}" onclick="fossView='fossLog';render()">✅ Log</button><button class="tab ${fossView==='fossCal'?'on':''}" onclick="fossView='fossCal';render()">📆 Calendar</button></div></div>`;
+}
+
+if(appMode==='spiral'){
 
 // ===== SCHEDULE VIEW =====
 if(view==='sched'){
@@ -1081,16 +1206,24 @@ h+=`<div style="display:flex;align-items:center;gap:4px;padding:3px 0;font-size:
 h+=`</div>`;
 }
 h+=`<input class="su-search" placeholder="🔍 Search service users..." value="${esc(suSearch)}" oninput="suSearch=this.value;render()" onfocus="this.select()">
+<div class="su-day-filter">📅 Showing ${DAY_NAMES[s.day]} attendees first</div>
 <div class="su-list">`;
 const q=suSearch.toLowerCase();
-serviceUsers.filter(su=>{
-if(q&&!su.name.toLowerCase().includes(q)&&!(su.flags||[]).join(',').toLowerCase().includes(q)&&!(FLAG_INFO[q.toUpperCase()]?su.flags.some(f=>FLAG_INFO[f]&&FLAG_INFO[f].toLowerCase().includes(q)):false))return false;
+const daySUs=serviceUsers.filter(su=>{
+if(q&&!su.name.toLowerCase().includes(q)&&!(su.flags||[]).join(',').toLowerCase().includes(q))return false;
 return true;
-}).slice(0,30).forEach(su=>{
+}).sort((a,b)=>{
+const aDay=(a.days||[]).includes(s.day)?0:1;
+const bDay=(b.days||[]).includes(s.day)?0:1;
+if(aDay!==bDay)return aDay-bDay;
+return a.name.localeCompare(b.name);
+}).slice(0,40);
+daySUs.forEach(su=>{
 const isAssigned=(s.assignedSUs||[]).includes(su.id);
-h+=`<div class="su-row ${isAssigned?'assigned':''}" onclick="toggleSUAssign('${s.id}','${su.id}')">
+const isForDay=(su.days||[]).includes(s.day);
+h+=`<div class="su-row ${isAssigned?'assigned':''}" onclick="toggleSUAssign('${s.id}','${su.id}')" style="${!isForDay&&!isAssigned?'opacity:0.45':''}">
 <div class="su-cb ${isAssigned?'on':''}">${isAssigned?'<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>':''}</div>
-<span class="su-name-flags">${suNameHtml(su)}</span>
+<span class="su-name-flags">${suNameHtml(su)}${isForDay?' <span style="font-size:9px;color:#6366F1">📅</span>':''}</span>
 </div>`;
 });
 h+=`</div></div>`;
@@ -1152,6 +1285,7 @@ return match;
 if(suPageSort==='name')filtered.sort((a,b)=>a.name.localeCompare(b.name));
 else if(suPageSort==='flags')filtered.sort((a,b)=>(b.flags||[]).length-(a.flags||[]).length);
 else if(suPageSort==='postcode')filtered.sort((a,b)=>(a.pc||'').localeCompare(b.pc||''));
+else if(suPageSort==='days')filtered.sort((a,b)=>(b.days||[]).length-(a.days||[]).length);
 
 // Stats
 const flagCounts={};allFlags.forEach(f=>{flagCounts[f]=serviceUsers.filter(su=>(su.flags||[]).includes(f)).length});
@@ -1166,7 +1300,8 @@ h+=`</div>`;
 // Search + sort
 h+=`<div class="su-filter-bar">`;
 h+=`<input class="su-search" placeholder="🔍 Search name, postcode, carer, condition, flag..." value="${esc(suPageSearch)}" oninput="suPageSearch=this.value;render()">`;
-h+=`<select class="su-sort-btn" onchange="suPageSort=this.value;render()"><option value="name" ${suPageSort==='name'?'selected':''}>A→Z Name</option><option value="flags" ${suPageSort==='flags'?'selected':''}>Most Flags</option><option value="postcode" ${suPageSort==='postcode'?'selected':''}>Postcode</option></select>`;
+h+=`<select class="su-sort-btn" onchange="suPageSort=this.value;render()"><option value="name" ${suPageSort==='name'?'selected':''}>A→Z Name</option><option value="flags" ${suPageSort==='flags'?'selected':''}>Most Flags</option><option value="postcode" ${suPageSort==='postcode'?'selected':''}>Postcode</option><option value="days" ${suPageSort==='days'?'selected':''}>Most Days</option></select>`;
+h+=`<button onclick="suAttView=!suAttView;render()" style="border:1px solid ${suAttView?'#6366F1':'#E5E7EB'};background:${suAttView?'#EEF2FF':'white'};color:${suAttView?'#6366F1':'#6B7280'};border-radius:8px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">${suAttView?'📋 Cards':'📅 Attendance'}</button>`;
 h+=`</div>`;
 
 // Flag filter chips
@@ -1181,7 +1316,26 @@ h+=`</div>`;
 // Results count
 h+=`<div class="su-page-count">${filtered.length===serviceUsers.length?`All ${filtered.length} service users`:`${filtered.length} of ${serviceUsers.length} service users`}</div>`;
 
-// SU Cards
+// SU view - attendance grid or cards
+if(suAttView){
+const dayTotals={};DAYS.forEach(d=>{dayTotals[d]=filtered.filter(su=>(su.days||[]).includes(d)).length});
+h+=`<div class="att-grid"><table class="att-table"><thead><tr><th>Service User</th>`;
+DAYS.forEach(d=>{h+=`<th>${DAY_NAMES[d].slice(0,3)}<br><span style="font-size:9px;color:#9CA3AF;font-weight:500">${dayTotals[d]}</span></th>`});
+h+=`<th>Total</th></tr></thead><tbody>`;
+filtered.forEach(su=>{
+const days=su.days||[];
+h+=`<tr><td onclick="showSUDetail('${su.id}')" style="cursor:pointer">${esc(su.name)}</td>`;
+DAYS.forEach(d=>{
+const on=days.includes(d);
+h+=`<td><button class="att-check ${on?'on':'off'}" onclick="event.stopPropagation();toggleSUDay('${su.id}','${d}')">${on?'\u2713':''}</button></td>`;
+});
+h+=`<td style="font-weight:700;color:#6366F1">${days.length}</td></tr>`;
+});
+h+=`</tbody></table></div>`;
+h+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">`;
+DAYS.forEach(d=>{h+=`<div style="background:white;border-radius:10px;padding:8px 12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center;min-width:50px"><div style="font-size:18px;font-weight:700;color:#6366F1">${dayTotals[d]}</div><div style="font-size:10px;color:#6B7280;font-weight:600">${DAY_NAMES[d].slice(0,3)}</div></div>`});
+h+=`</div></div>`;
+} else {
 h+=`<div class="su-card-grid">`;
 filtered.forEach(su=>{
 h+=`<div class="su-card" onclick="showSUDetail('${su.id}')">`;
@@ -1190,6 +1344,7 @@ h+=`<div><div class="su-card-name">${esc(su.name)}</div>`;
 if(su.pn)h+=`<div class="su-card-pref">Prefers: "${esc(su.pn)}"</div>`;
 h+=`</div></div>`;
 if(su.flags&&su.flags.length)h+=`<div class="su-card-flags">${suFlagBadges(su.flags)}</div>`;
+if(su.days&&su.days.length)h+=`<div class="su-day-dots">${su.days.map(d=>'<span class="su-day-dot">'+DAY_NAMES[d].slice(0,3)+'</span>').join('')}</div>`;
 h+=`<div class="su-card-meta">`;
 if(su.dob)h+=`<span>${esc(su.dob)}</span>`;
 if(su.pc)h+=`<span>📍 ${esc(su.pc)}</span>`;
@@ -1199,6 +1354,115 @@ if(su.med)h+=`<span>🏥 ${esc(su.med.length>40?su.med.slice(0,40)+'…':su.med)
 h+=`</div></div>`;
 });
 h+=`</div></div>`;
+}
+}
+
+// ===== REGISTER TAB =====
+if(view==='regTab'){
+const rwk=getWeekKey(regWeekOffset);
+const weekDates=getWeekDates(regWeekOffset);
+const isThisWeek=regWeekOffset===0;
+const activeSchd=weekSchedules[rwk]||schedule;
+
+// Auto-populate from schedule
+populateRegFromSchedule(rwk);
+
+h+=`<div style="padding:0 12px 100px">`;
+
+// Week nav
+h+=`<div class="rota-week-nav">`;
+h+=`<button class="rota-week-btn" onclick="regWeekOffset--;render()">◀ Prev</button>`;
+h+=`<div class="rota-week-label">${rwk} ${isThisWeek?'<span style="background:#22C55E;color:white;font-size:9px;padding:2px 6px;border-radius:100px;margin-left:4px;vertical-align:middle">This Week</span>':''}<br><span class="rota-week-dates">${fmtShortDate(weekDates[0])} – ${fmtShortDate(weekDates[4])}</span></div>`;
+h+=`<button class="rota-week-btn" onclick="regWeekOffset++;render()">Next ▶</button>`;
+h+=`</div>`;
+h+=`<div style="display:flex;gap:6px;margin-bottom:10px"><button class="rota-week-btn" onclick="regWeekOffset=0;render()">Today</button></div>`;
+
+// Summary counts for the week
+let weekPresent=0,weekAbsent=0,weekLate=0,weekExpected=0;
+DAYS.forEach(day=>{
+const daySUs=serviceUsers.filter(su=>(su.days||[]).includes(day));
+daySUs.forEach(su=>{
+const st=getRegStat(rwk,day,su.id);
+weekExpected++;
+if(st==='present')weekPresent++;
+else if(st==='absent')weekAbsent++;
+else if(st==='late')weekLate++;
+});
+});
+h+=`<div class="reg-summary">`;
+h+=`<div class="reg-sum-card"><div class="reg-sum-num" style="color:#6366F1">${weekExpected}</div><div class="reg-sum-lbl">Expected</div></div>`;
+h+=`<div class="reg-sum-card"><div class="reg-sum-num" style="color:#22C55E">${weekPresent}</div><div class="reg-sum-lbl">Present</div></div>`;
+h+=`<div class="reg-sum-card"><div class="reg-sum-num" style="color:#EF4444">${weekAbsent}</div><div class="reg-sum-lbl">Absent</div></div>`;
+h+=`<div class="reg-sum-card"><div class="reg-sum-num" style="color:#F59E0B">${weekLate}</div><div class="reg-sum-lbl">Late</div></div>`;
+h+=`</div>`;
+
+// Each day
+DAYS.forEach((day,di)=>{
+const daySessions=activeSchd.filter(s=>s.day===day);
+const expectedSUs=serviceUsers.filter(su=>(su.days||[]).includes(day));
+const assignedIds=new Set();
+daySessions.forEach(s=>(s.assignedSUs||[]).forEach(id=>assignedIds.add(id)));
+
+const dayP=expectedSUs.filter(su=>getRegStat(rwk,day,su.id)==='present').length;
+const dayA=expectedSUs.filter(su=>getRegStat(rwk,day,su.id)==='absent').length;
+const dayL=expectedSUs.filter(su=>getRegStat(rwk,day,su.id)==='late').length;
+
+h+=`<div class="reg-day-card">`;
+h+=`<div class="reg-day-hdr"><div class="reg-day-title">${DAY_NAMES[day]} <span style="font-weight:400;font-size:12px;color:#6B7280">${fmtShortDate(weekDates[di])}</span></div>`;
+h+=`<div class="reg-day-count">${expectedSUs.length} expected · <span style="color:#22C55E">${dayP}✓</span> <span style="color:#EF4444">${dayA}✗</span> <span style="color:#F59E0B">${dayL}⏰</span></div></div>`;
+
+// Group by session
+['am','pm'].forEach(period=>{
+const periodSessions=daySessions.filter(s=>s.period===period);
+if(!periodSessions.length)return;
+periodSessions.forEach(sess=>{
+const sessAssigned=(sess.assignedSUs||[]).map(id=>serviceUsers.find(u=>u.id===id)).filter(Boolean);
+if(!sessAssigned.length)return;
+h+=`<div class="reg-sess-title">${period.toUpperCase()} · ${esc(sess.name)} (${sessAssigned.length})</div>`;
+sessAssigned.forEach(su=>{
+const st=getRegStat(rwk,day,su.id);
+const note=getRegNote(rwk,day,su.id);
+h+=`<div class="reg-row">`;
+h+=`<div class="reg-name" onclick="showSUDetail('${su.id}')" style="cursor:pointer">${esc(su.pn||su.name)}</div>`;
+h+=`<div class="reg-status">`;
+h+=`<button class="reg-btn ${st==='present'?'active-p':''}" onclick="setRegStatus('${rwk}','${day}','${su.id}','present')" title="Present">✓</button>`;
+h+=`<button class="reg-btn ${st==='absent'?'active-a':''}" onclick="setRegStatus('${rwk}','${day}','${su.id}','absent')" title="Absent">✗</button>`;
+h+=`<button class="reg-btn ${st==='late'?'active-l':''}" onclick="setRegStatus('${rwk}','${day}','${su.id}','late')" title="Late">⏰</button>`;
+h+=`<button class="reg-btn ${st==='holiday'?'active-h':''}" onclick="setRegStatus('${rwk}','${day}','${su.id}','holiday')" title="Holiday">🏖</button>`;
+h+=`</div>`;
+h+=`<input class="reg-note" placeholder="Note..." value="${esc(note)}" onchange="setRegNote('${rwk}','${day}','${su.id}',this.value)">`;
+h+=`</div>`;
+});
+});
+});
+
+// Unassigned SUs who attend this day but aren't in any session
+const unassigned=expectedSUs.filter(su=>!assignedIds.has(su.id));
+if(unassigned.length){
+h+=`<div class="reg-unassigned">⚠️ <strong>${unassigned.length} SU${unassigned.length>1?'s':''} attend ${DAY_NAMES[day]} but not assigned to a session:</strong><br>`;
+unassigned.forEach(su=>{
+const st=getRegStat(rwk,day,su.id);
+const note=getRegNote(rwk,day,su.id);
+h+=`<div class="reg-row" style="background:transparent">`;
+h+=`<div class="reg-name" onclick="showSUDetail('${su.id}')" style="cursor:pointer">${esc(su.pn||su.name)}</div>`;
+h+=`<div class="reg-status">`;
+h+=`<button class="reg-btn ${st==='present'?'active-p':''}" onclick="setRegStatus('${rwk}','${day}','${su.id}','present')">✓</button>`;
+h+=`<button class="reg-btn ${st==='absent'?'active-a':''}" onclick="setRegStatus('${rwk}','${day}','${su.id}','absent')">✗</button>`;
+h+=`<button class="reg-btn ${st==='late'?'active-l':''}" onclick="setRegStatus('${rwk}','${day}','${su.id}','late')">⏰</button>`;
+h+=`<button class="reg-btn ${st==='holiday'?'active-h':''}" onclick="setRegStatus('${rwk}','${day}','${su.id}','holiday')">🏖</button>`;
+h+=`</div>`;
+h+=`<input class="reg-note" placeholder="Note..." value="${esc(note)}" onchange="setRegNote('${rwk}','${day}','${su.id}',this.value)">`;
+h+=`</div>`;
+});
+h+=`</div>`;
+}
+
+if(!expectedSUs.length&&!daySessions.length){
+h+=`<div style="color:#9CA3AF;font-size:12px;padding:8px 0">No SUs scheduled for ${DAY_NAMES[day]}</div>`;
+}
+h+=`</div>`;
+});
+h+=`</div>`;
 }
 
 // ===== STAFF TAB =====
@@ -1399,6 +1663,46 @@ h+=`<div class="dash-card"><div class="dash-person-hdr"><div class="dash-av" sty
 inc.slice(0,5).forEach(t=>{const dn=D.find(d=>d.tasks.some(x=>x.id===t.id))?.name||'';h+=`<div class="dash-task"><span class="badge ${t.priority==='high'?'b-hi':t.priority==='low'?'b-lo':'b-md'}" style="flex-shrink:0">${t.priority==='high'?'High':t.priority==='low'?'Low':'Med'}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.text)}</span><span class="dash-dept-tag">${esc(dn)}</span></div>`});
 if(inc.length>5)h+=`<p style="font-size:10px;color:#9CA3AF;text-align:center;padding:3px">+${inc.length-5} more</p>`;h+=`</div>`});h+=`</div>`}
 
+// ===== CALENDAR TAB =====
+if(view==='calTab'){
+const calIds=[
+{id:'c_a2fc97ac7ec6d397d6296427bafbeb18178afef1b4e372e794c4a272f61549b5@group.calendar.google.com',name:'Spiral Holidays',color:'#9a9cff'},
+{id:'c_b57d5b89f1300098ff602f6e485d62341b8e5c6cf55aba1b7afffd9dd74095e2@group.calendar.google.com',name:'Events',color:'#9fe1e7'},
+{id:'c_fe55ecf4b564b226c7696e42a2c8fbe8426195721562af891fd6906755c57ece@group.calendar.google.com',name:'Staff',color:'#a47ae2'},
+{id:'c_2b070807610cf49745f841332cce28fac96df1d2d898e849c259f5ea7045f3e8@group.calendar.google.com',name:'Appointments',color:'#fad165'},
+{id:'c_46627930d625451054394567d54d5bd71c703b1451536a7ac0f62d3c16793559@group.calendar.google.com',name:'Clients',color:'#fa573c'},
+{id:'c_bb2c0773ad5597013147b9faa929440e47f6b4964a3acb5a82a2a1c6ced8e488@group.calendar.google.com',name:'Minibus',color:'#f691b2'}
+];
+const srcParams=calIds.map(c=>'src='+encodeURIComponent(c.id)+'&color='+encodeURIComponent(c.color)).join('&');
+const embedUrl='https://calendar.google.com/calendar/embed?'+srcParams+'&ctz=Europe/London&showTitle=0&showPrint=0&showCalendars=1&showTz=0&mode=WEEK';
+const embedUrlMonth='https://calendar.google.com/calendar/embed?'+srcParams+'&ctz=Europe/London&showTitle=0&showPrint=0&showCalendars=1&showTz=0&mode=MONTH';
+const embedUrlAgenda='https://calendar.google.com/calendar/embed?'+srcParams+'&ctz=Europe/London&showTitle=0&showPrint=0&showCalendars=1&showTz=0&mode=AGENDA';
+
+h+=`<div style="padding:0 12px 100px">`;
+h+=`<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;align-items:center">`;
+h+=`<div style="font-size:15px;font-weight:700;color:#1F2937;flex:1">📆 Calendar</div>`;
+h+=`<button onclick="document.getElementById('cal-frame').src='${embedUrl}'" style="border:1px solid #E5E7EB;background:white;border-radius:8px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;color:#374151">Week</button>`;
+h+=`<button onclick="document.getElementById('cal-frame').src='${embedUrlMonth}'" style="border:1px solid #E5E7EB;background:white;border-radius:8px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;color:#374151">Month</button>`;
+h+=`<button onclick="document.getElementById('cal-frame').src='${embedUrlAgenda}'" style="border:1px solid #E5E7EB;background:white;border-radius:8px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;color:#374151">Agenda</button>`;
+h+=`<a href="https://calendar.google.com" target="_blank" style="border:1px solid #E5E7EB;background:white;border-radius:8px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer;color:#6366F1;text-decoration:none">Open in Google ↗</a>`;
+h+=`</div>`;
+
+// Legend
+h+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">`;
+calIds.forEach(c=>{
+h+=`<div style="display:flex;align-items:center;gap:4px;font-size:11px;color:#374151"><span style="width:10px;height:10px;border-radius:3px;background:${c.color};flex-shrink:0"></span>${c.name}</div>`;
+});
+h+=`</div>`;
+
+// Embed
+h+=`<div style="background:white;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06)">`;
+h+=`<iframe id="cal-frame" src="${embedUrl}" style="border:0;width:100%;height:70vh;min-height:500px" frameborder="0" scrolling="no"></iframe>`;
+h+=`</div>`;
+
+h+=`<div style="margin-top:8px;font-size:11px;color:#9CA3AF;text-align:center">Read-only view · Edit events in <a href="https://calendar.google.com" target="_blank" style="color:#6366F1">Google Calendar</a></div>`;
+h+=`</div>`;
+}
+
 // ===== HISTORY =====
 if(view==='hist'){
 h+=`<div class="hist-section"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div class="dash-title" style="margin:0">History</div><button onclick="takeSnapshot()" style="border:none;background:#1F2937;color:white;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer">📸 Snapshot</button></div>`;
@@ -1406,6 +1710,160 @@ if(!history.length){h+=`<div class="dash-card" style="text-align:center;padding:
 if(history.length>=2){h+=`<div class="dash-card"><div style="font-size:13px;font-weight:600;color:#1F2937;margin-bottom:4px">Trend</div><div class="chart-area" style="margin-left:30px;margin-bottom:20px">`;const pts=history.slice(-12);pts.forEach((s,i)=>{const x=(i/(Math.max(pts.length-1,1)))*100;const y=100-s.overall;h+=`<div class="chart-dot" style="left:${x}%;top:${y}%"></div><div class="chart-label" style="left:${x}%">${new Date(s.date).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</div>`});if(pts.length>1){let path='';pts.forEach((s,i)=>{const x=(i/(pts.length-1))*100;const y=100-s.overall;path+=(i===0?'M':'L')+` ${x} ${y}`});h+=`<svg style="position:absolute;inset:0" viewBox="0 0 100 100" preserveAspectRatio="none"><path d="${path}" fill="none" stroke="#6366F1" stroke-width="0.8" vector-effect="non-scaling-stroke"/></svg>`}h+=`<div class="chart-y" style="bottom:0">0%</div><div class="chart-y" style="top:0">100%</div></div></div>`}
 [...history].reverse().forEach((snap,i)=>{h+=`<div class="hist-card"><div class="hist-date">${new Date(snap.date).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'long'})} — ${snap.overall}%</div>`;(snap.depts||[]).forEach(d=>{const rc=d.rag==='red'?'#EF4444':d.rag==='amber'?'#F59E0B':d.rag==='green'?'#22C55E':'#D1D5DB';h+=`<div class="hist-bar"><span class="hist-bar-nm">${esc(d.name)}</span><span style="width:8px;height:8px;border-radius:100px;background:${rc};flex-shrink:0"></span><div class="hist-bar-track"><div class="hist-bar-fill" style="width:${d.pct}%;background:${d.color}"></div></div><span class="hist-bar-pct">${d.pct}%</span></div>`});h+=`</div>`});
 h+=`<button onclick="if(confirm('Clear?')){history=[];save();render()}" style="width:100%;border:none;background:none;font-size:11px;color:#BCBAB5;padding:8px;cursor:pointer">Clear history</button>`}h+=`</div>`}
+
+} // end if(appMode==='spiral')
+
+// ======== FOSS MODE VIEWS ========
+if(appMode==='foss'){
+
+// ===== FOSS TASKS =====
+if(fossView==='fossTasks'){
+const fDepts=fD();
+const fStaffList=fStaff();
+const fossIsF=fossFilterPri!=='all'||fossFilterStaff!=='all';
+function fossFilterTasks(tasks){return tasks.filter(t=>{const pM=fossFilterPri==='all'||t.priority===fossFilterPri;const sM=fossFilterStaff==='all'||(fossFilterStaff==='unassigned'?!t.assignee:t.assignee===fossFilterStaff);return pM&&sM})}
+
+h+=`<div class="fbar"><button class="fb ${fossFilterPri==='all'?'on':'off'}" style="${fossFilterPri==='all'?'background:#10B981':''}" onclick="fossFilterPri='all';render()">All</button><button class="fb ${fossFilterPri==='high'?'on':'off'}" style="${fossFilterPri==='high'?'background:#DC2626':''}" onclick="fossFilterPri='high';render()">🔴 High</button><button class="fb ${fossFilterPri==='med'?'on':'off'}" style="${fossFilterPri==='med'?'background:#D97706':''}" onclick="fossFilterPri='med';render()">🟡 Med</button><button class="fb ${fossFilterPri==='low'?'on':'off'}" style="${fossFilterPri==='low'?'background:#2563EB':''}" onclick="fossFilterPri='low';render()">🔵 Low</button><span style="width:1px;background:#E5E7EB;flex-shrink:0;margin:3px 1px"></span><button class="fb ${fossFilterStaff==='all'?'on':'off'}" style="${fossFilterStaff==='all'?'background:#10B981':''}" onclick="fossFilterStaff='all';render()">Everyone</button>`;
+fStaffList.forEach(s=>{h+=`<button class="fb ${fossFilterStaff===s?'on':'off'}" onclick="fossFilterStaff='${esc(s)}';render()">${esc(s)}</button>`});
+h+=`<button class="fb ${fossFilterStaff==='unassigned'?'on':'off'}" style="${fossFilterStaff==='unassigned'?'background:#6B7280':''}" onclick="fossFilterStaff='unassigned';render()">Unassigned</button></div><div class="cards">`;
+
+fDepts.forEach((dept,idx)=>{
+const vis=fossFilterTasks(dept.tasks);const tot=dept.tasks.length;const dn=dept.tasks.filter(t=>t.done).length;const p=tot?Math.round(dn/tot*100):0;
+const isO=fossOpenD[dept.id];const isA=fossAddingTo===dept.id;const rc=dept.rag||'none';
+if(fossIsF&&!vis.length)return;
+h+=`<div class="card"><div class="card-hdr"><div class="card-tog" onclick="fossOpenD['${dept.id}']=!fossOpenD['${dept.id}'];render()"><div class="card-top"><div class="card-nm"><span>${dept.emoji}</span><span>${esc(dept.name)}</span></div><div class="card-st"><div class="rag-row"><button class="rag-dot ${rc==='red'?'rag-r':'rag-none'}" style="${rc==='red'?'box-shadow:0 0 0 2px white,0 0 0 3px #EF4444':''}" onclick="event.stopPropagation();fossSetRag('${dept.id}','red')"></button><button class="rag-dot ${rc==='amber'?'rag-a':'rag-none'}" style="${rc==='amber'?'box-shadow:0 0 0 2px white,0 0 0 3px #F59E0B':''}" onclick="event.stopPropagation();fossSetRag('${dept.id}','amber')"></button><button class="rag-dot ${rc==='green'?'rag-g':'rag-none'}" style="${rc==='green'?'box-shadow:0 0 0 2px white,0 0 0 3px #22C55E':''}" onclick="event.stopPropagation();fossSetRag('${dept.id}','green')"></button></div><span class="card-cnt" style="color:${dept.color};background:${dept.color}14">${dn}/${tot}</span><svg class="chv ${isO?'open':''}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg></div></div><div style="width:100%;padding-top:2px"><div class="card-bar"><div class="card-fill" style="width:${p}%;background:${dept.color}"></div></div></div></div></div>`;
+h+=`<div class="tpanel ${isO?'open':''}"><div class="tinner">`;
+const sorted=[...vis].sort((a,b)=>{if(a.done!==b.done)return a.done?1:-1;return 0});
+sorted.forEach(task=>{
+const isEd=fossEditingT===task.id;const pb=task.priority==='high'?'b-hi':task.priority==='low'?'b-lo':'b-md';const nc=(task.notes||[]).length;
+h+=`<div class="trow"><div class="trow-main"><div style="padding-top:1px"><button class="cb ${task.done?'':'off'}" style="${task.done?'background:'+dept.color:''}" onclick="fossToggleTask('${dept.id}','${task.id}')">${task.done?'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>':''}</button></div><div style="flex:1;min-width:0"><span class="ttxt ${task.done?'done':'todo'}">${esc(task.text)}</span><div class="tmeta"><span class="badge ${pb}">${task.priority==='high'?'High':task.priority==='low'?'Low':'Med'}</span>${task.assignee?`<span class="badge b-staff">👤 ${esc(task.assignee)}</span>`:`<span class="badge b-unass">Unassigned</span>`}</div></div><div class="tbtns"><button class="tbtn" onclick="fossNotesOpen['${task.id}']=!fossNotesOpen['${task.id}'];render()">💬${nc?' '+nc:''}</button><button class="tbtn" onclick="fossEditingT=fossEditingT==='${task.id}'?null:'${task.id}';render()">✏️</button><button class="tbtn" onclick="fossDeleteTask('${dept.id}','${task.id}')">×</button></div></div>`;
+if(isEd){h+=`<div class="tedit"><select onchange="fossUpdateTF('${dept.id}','${task.id}','priority',this.value)"><option value="high" ${task.priority==='high'?'selected':''}>🔴 High</option><option value="med" ${task.priority==='med'?'selected':''}>🟡 Med</option><option value="low" ${task.priority==='low'?'selected':''}>🔵 Low</option></select><select onchange="fossUpdateTF('${dept.id}','${task.id}','assignee',this.value)"><option value="">Unassigned</option>${fStaffList.map(s=>`<option value="${esc(s)}" ${task.assignee===s?'selected':''}>${esc(s)}</option>`).join('')}</select><button class="done-btn" onclick="fossEditingT=null;render()">Done</button></div>`}
+if(fossNotesOpen[task.id]){h+=`<div class="note-panel">`;(task.notes||[]).forEach(n=>{h+=`<div class="note-item"><div class="note-text">${esc(n.text)}</div><div class="note-ts">${fmtDateTime(n.ts)}</div></div>`});h+=`<div class="note-form"><input id="fn-${task.id}" placeholder="Add note..." onkeydown="if(event.key==='Enter')fossAddNote('${dept.id}','${task.id}')"><button onclick="fossAddNote('${dept.id}','${task.id}')">+</button></div></div>`}
+h+=`</div>`;
+});
+if(!sorted.length)h+=`<p class="notasks">No tasks yet</p>`;
+if(isA){h+=`<div class="atf"><div class="atf-r"><input type="text" id="fatf-t-${dept.id}" placeholder="New task..." onkeydown="if(event.key==='Enter')fossAddTask('${dept.id}')"></div><div class="atf-r"><select id="fatf-p-${dept.id}"><option value="high">🔴 High</option><option value="med" selected>🟡 Med</option><option value="low">🔵 Low</option></select><select id="fatf-s-${dept.id}"><option value="">Unassigned</option>${fStaffList.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select></div><button class="atf-sub" style="background:${dept.color}" onclick="fossAddTask('${dept.id}')">Add Task</button></div>`}
+else{h+=`<button class="add-task" style="color:${dept.color}" onclick="fossAddingTo='${dept.id}';render()">+ Add Task</button>`}
+h+=`<button class="ms-del" onclick="fossDeleteDept('${dept.id}')" style="margin-top:4px">Delete Department</button>`;
+h+=`</div></div></div>`;
+});
+h+=`<button class="add-dept" onclick="fossAddDept()" style="background:#10B981">+ Add Department</button></div>`;
+}
+
+// ===== FOSS STAFF =====
+if(fossView==='fossStaff'){
+h+=`<div class="staff-page">`;
+h+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div style="font-size:15px;font-weight:700;color:#1F2937">FOSS Team (${fSP().length})</div><button onclick="fossAddStaff()" style="border:none;background:#10B981;color:white;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer">+ Add Member</button></div>`;
+fSP().forEach(sp=>{
+const isEd=fossEditingStaff===sp.id;
+const taskCount=fD().reduce((n,d)=>n+d.tasks.filter(t=>t.assignee===sp.name).length,0);
+h+=`<div class="staff-profile">`;
+h+=`<div class="staff-profile-hdr" onclick="fossEditingStaff=fossEditingStaff==='${sp.id}'?null:'${sp.id}';render()">`;
+h+=`<div class="staff-avatar" style="background:${sp.color}">${sp.name.charAt(0)}</div>`;
+h+=`<div class="staff-profile-info"><div class="staff-profile-name">${esc(sp.name)}</div><div class="staff-profile-role">${esc(sp.role)}</div>`;
+h+=`<div class="staff-profile-meta">`;
+if(sp.phone)h+=`<span>📞 ${esc(sp.phone)}</span>`;
+if(sp.email)h+=`<span>✉️ ${esc(sp.email)}</span>`;
+h+=`<span>📋 ${taskCount} tasks</span></div></div>`;
+h+=`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2.5" style="flex-shrink:0;transition:transform 0.25s;${isEd?'transform:rotate(180deg)':''}"><polyline points="6 9 12 15 18 9"/></svg></div>`;
+if(isEd){
+h+=`<div class="staff-profile-body">`;
+h+=`<div class="staff-field-row"><div class="staff-field"><label>Name</label><input value="${esc(sp.name)}" onchange="fossUpdateStaff('${sp.id}','name',this.value)"></div><div class="staff-field"><label>Role</label><input value="${esc(sp.role)}" onchange="fossUpdateStaff('${sp.id}','role',this.value)" placeholder="e.g. Volunteer"></div></div>`;
+h+=`<div class="staff-field-row"><div class="staff-field"><label>Phone</label><input value="${esc(sp.phone)}" onchange="fossUpdateStaff('${sp.id}','phone',this.value)"></div><div class="staff-field"><label>Email</label><input value="${esc(sp.email)}" onchange="fossUpdateStaff('${sp.id}','email',this.value)" type="email"></div></div>`;
+h+=`<div class="staff-field"><label>Notes</label><textarea onchange="fossUpdateStaff('${sp.id}','notes',this.value)" placeholder="Skills, availability, etc.">${esc(sp.notes)}</textarea></div>`;
+h+=`<button onclick="fossRemoveStaff('${sp.id}')" style="align-self:flex-start;border:1px solid #FEE2E2;background:#FEF2F2;color:#DC2626;border-radius:8px;padding:6px 14px;font-size:11px;font-weight:600;cursor:pointer">Remove</button>`;
+h+=`</div>`}
+h+=`</div>`;
+});
+h+=`</div>`;
+}
+
+// ===== FOSS CONTACTS =====
+if(fossView==='fossContacts'){
+h+=`<div style="padding:0 12px 100px">`;
+h+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div style="font-size:15px;font-weight:700;color:#1F2937">📇 Contacts (${fC().length})</div><button onclick="fossAddContact()" style="border:none;background:#10B981;color:white;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer">+ Add Contact</button></div>`;
+fC().forEach(c=>{
+const isEd=fossEditingContact===c.id;
+h+=`<div class="staff-profile">`;
+h+=`<div class="staff-profile-hdr" onclick="fossEditingContact=fossEditingContact==='${c.id}'?null:'${c.id}';render()">`;
+h+=`<div class="staff-avatar" style="background:#6366F1">${(c.name||'?').charAt(0).toUpperCase()}</div>`;
+h+=`<div class="staff-profile-info"><div class="staff-profile-name">${esc(c.name||'New Contact')}</div><div class="staff-profile-role">${esc(c.role||'')}</div>`;
+h+=`<div class="staff-profile-meta">`;
+if(c.org)h+=`<span>🏢 ${esc(c.org)}</span>`;
+if(c.phone)h+=`<span>📞 ${esc(c.phone)}</span>`;
+if(c.email)h+=`<span>✉️ ${esc(c.email)}</span>`;
+h+=`</div></div>`;
+h+=`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2.5" style="flex-shrink:0;transition:transform 0.25s;${isEd?'transform:rotate(180deg)':''}"><polyline points="6 9 12 15 18 9"/></svg></div>`;
+if(isEd){
+h+=`<div class="staff-profile-body">`;
+h+=`<div class="staff-field-row"><div class="staff-field"><label>Name</label><input value="${esc(c.name)}" onchange="fossUpdateContact('${c.id}','name',this.value)"></div><div class="staff-field"><label>Role</label><input value="${esc(c.role)}" onchange="fossUpdateContact('${c.id}','role',this.value)" placeholder="e.g. Donor, Trustee"></div></div>`;
+h+=`<div class="staff-field-row"><div class="staff-field"><label>Organisation</label><input value="${esc(c.org)}" onchange="fossUpdateContact('${c.id}','org',this.value)"></div><div class="staff-field"><label>Phone</label><input value="${esc(c.phone)}" onchange="fossUpdateContact('${c.id}','phone',this.value)"></div></div>`;
+h+=`<div class="staff-field"><label>Email</label><input value="${esc(c.email)}" onchange="fossUpdateContact('${c.id}','email',this.value)" type="email"></div>`;
+h+=`<div class="staff-field"><label>Notes</label><textarea onchange="fossUpdateContact('${c.id}','notes',this.value)" placeholder="Notes...">${esc(c.notes)}</textarea></div>`;
+h+=`<button onclick="fossDeleteContact('${c.id}')" style="align-self:flex-start;border:1px solid #FEE2E2;background:#FEF2F2;color:#DC2626;border-radius:8px;padding:6px 14px;font-size:11px;font-weight:600;cursor:pointer">Remove</button>`;
+h+=`</div>`}
+h+=`</div>`;
+});
+if(!fC().length)h+=`<div style="text-align:center;padding:32px;color:#9CA3AF"><p style="font-size:14px">No contacts yet</p><p style="font-size:12px">Add donors, volunteers, trustees and other contacts</p></div>`;
+h+=`</div>`;
+}
+
+// ===== FOSS SU MIRROR (read-only) =====
+if(fossView==='fossSUs'){
+h+=`<div style="padding:0 12px 100px">`;
+h+=`<div style="font-size:15px;font-weight:700;color:#1F2937;margin-bottom:6px">👤 Service Users <span style="font-size:11px;font-weight:500;color:#6B7280">(read-only)</span></div>`;
+h+=`<input class="su-search" placeholder="🔍 Search name, postcode, carer..." value="${esc(suPageSearch)}" oninput="suPageSearch=this.value;render()">`;
+let fSUs=serviceUsers.filter(su=>{if(!suPageSearch)return true;const q=suPageSearch.toLowerCase();return su.name.toLowerCase().includes(q)||(su.pc&&su.pc.toLowerCase().includes(q))||(su.co&&su.co.toLowerCase().includes(q))});
+fSUs.sort((a,b)=>a.name.localeCompare(b.name));
+h+=`<div class="su-page-count">${fSUs.length} of ${serviceUsers.length} service users</div>`;
+h+=`<div class="su-card-grid">`;
+fSUs.forEach(su=>{
+h+=`<div class="su-card" onclick="showSUDetail('${su.id}')">`;
+h+=`<div><div class="su-card-name">${esc(su.name)}</div>`;
+if(su.pn)h+=`<div class="su-card-pref">Prefers: "${esc(su.pn)}"</div>`;
+h+=`</div>`;
+if(su.flags&&su.flags.length)h+=`<div class="su-card-flags">${suFlagBadges(su.flags)}</div>`;
+h+=`<div class="su-card-meta">`;
+if(su.pc)h+=`<span>📍 ${esc(su.pc)}</span>`;
+if(su.co)h+=`<span>🏢 ${esc(su.co.length>35?su.co.slice(0,35)+'…':su.co)}</span>`;
+h+=`</div></div>`;
+});
+h+=`</div></div>`;
+}
+
+// ===== FOSS COMPLETED LOG =====
+if(fossView==='fossLog'){
+const log=[...fossData.completedLog].reverse();
+h+=`<div style="padding:0 12px 100px">`;
+h+=`<div style="font-size:15px;font-weight:700;color:#1F2937;margin-bottom:12px">✅ Completed Tasks (${log.length})</div>`;
+if(!log.length)h+=`<div style="text-align:center;padding:32px;color:#9CA3AF"><p>No completed tasks yet</p><p style="font-size:12px">Tasks marked as done will appear here</p></div>`;
+else{
+log.forEach(l=>{
+h+=`<div class="dash-card" style="margin-bottom:6px"><div style="display:flex;justify-content:space-between;align-items:start"><div style="flex:1"><div style="font-size:13px;font-weight:600;color:#1F2937">${esc(l.text)}</div><div style="font-size:11px;color:#6B7280;margin-top:2px">${esc(l.dept)} · ${esc(l.assignee)}</div></div><div style="font-size:10px;color:#9CA3AF;white-space:nowrap">${fmtDateTime(l.completedAt)}</div></div></div>`;
+});
+if(log.length>10)h+=`<button onclick="if(confirm('Clear completed log?')){fossData.completedLog=[];save();render()}" style="width:100%;border:none;background:none;font-size:11px;color:#BCBAB5;padding:8px;cursor:pointer">Clear log</button>`;
+}
+h+=`</div>`;
+}
+
+// ===== FOSS CALENDAR (shared) =====
+if(fossView==='fossCal'){
+const calIds=[
+{id:'c_a2fc97ac7ec6d397d6296427bafbeb18178afef1b4e372e794c4a272f61549b5@group.calendar.google.com',name:'Spiral Holidays',color:'#9a9cff'},
+{id:'c_b57d5b89f1300098ff602f6e485d62341b8e5c6cf55aba1b7afffd9dd74095e2@group.calendar.google.com',name:'Events',color:'#9fe1e7'},
+{id:'c_fe55ecf4b564b226c7696e42a2c8fbe8426195721562af891fd6906755c57ece@group.calendar.google.com',name:'Staff',color:'#a47ae2'},
+{id:'c_2b070807610cf49745f841332cce28fac96df1d2d898e849c259f5ea7045f3e8@group.calendar.google.com',name:'Appointments',color:'#fad165'},
+{id:'c_46627930d625451054394567d54d5bd71c703b1451536a7ac0f62d3c16793559@group.calendar.google.com',name:'Clients',color:'#fa573c'},
+{id:'c_bb2c0773ad5597013147b9faa929440e47f6b4964a3acb5a82a2a1c6ced8e488@group.calendar.google.com',name:'Minibus',color:'#f691b2'}
+];
+const srcParams=calIds.map(c=>'src='+encodeURIComponent(c.id)+'&color='+encodeURIComponent(c.color)).join('&');
+const embedUrl='https://calendar.google.com/calendar/embed?'+srcParams+'&ctz=Europe/London&showTitle=0&showPrint=0&showCalendars=1&showTz=0&mode=WEEK';
+h+=`<div style="padding:0 12px 100px">`;
+h+=`<div style="display:flex;gap:6px;margin-bottom:10px;align-items:center"><div style="font-size:15px;font-weight:700;color:#1F2937;flex:1">📆 Calendar</div><a href="https://calendar.google.com" target="_blank" style="border:1px solid #E5E7EB;background:white;border-radius:8px;padding:6px 10px;font-size:11px;font-weight:600;color:#10B981;text-decoration:none">Open in Google ↗</a></div>`;
+h+=`<div style="background:white;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.06)"><iframe src="${embedUrl}" style="border:0;width:100%;height:70vh;min-height:500px" frameborder="0" scrolling="no"></iframe></div></div>`;
+}
+
+} // end if(appMode==='foss')
 
 // ===== MODALS =====
 if(activeModal==='addDept'){h+=`<div class="mov" onclick="activeModal=null;render()"><div class="msh" onclick="event.stopPropagation()"><div class="mha"></div><div class="mti">Add Department</div><div style="display:flex;flex-direction:column;gap:12px"><div><label class="mlbl">Name</label><input class="minp" id="nd-nm" value="${esc(newD.name)}" placeholder="e.g. Training" oninput="newD.name=this.value" onkeydown="if(event.key==='Enter')addDepartment()"></div><div><label class="mlbl">Icon</label><div class="emgrid">${EM.map(e=>`<button class="embtn ${newD.emoji===e?'sel':''}" onclick="newD.emoji='${e}';render()">${e}</button>`).join('')}</div></div><div><label class="mlbl">Colour</label><div class="clgrid">${CL.map(c=>`<button class="clbtn" style="background:${c};${newD.color===c?`box-shadow:0 0 0 3px white,0 0 0 4px ${c}`:''}" onclick="newD.color='${c}';render()"></button>`).join('')}</div></div><button class="mbtn dark" ${!newD.name.trim()?'disabled':''} onclick="addDepartment()">Add Department</button></div></div></div>`}
