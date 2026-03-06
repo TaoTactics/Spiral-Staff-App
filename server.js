@@ -68,8 +68,37 @@ app.use(express.static(__dirname, {
   extensions: ['html']
 }));
 
-// Basic auth middleware
+// Generate a simple session token
+const crypto = require('crypto');
+const SESSION_SECRET = crypto.randomBytes(32).toString('hex');
+const sessions = {}; // token -> {username, role, created}
+
+function createSession(user) {
+  const token = crypto.randomBytes(24).toString('hex');
+  sessions[token] = { username: user.username, role: user.role, id: user.id, created: Date.now() };
+  // Clean old sessions (>24h)
+  for (const [k, v] of Object.entries(sessions)) {
+    if (Date.now() - v.created > 86400000) delete sessions[k];
+  }
+  return token;
+}
+
+// Cookie parser helper
+function getCookie(req, name) {
+  const cookies = req.headers.cookie || '';
+  const match = cookies.split(';').map(c => c.trim()).find(c => c.startsWith(name + '='));
+  return match ? match.split('=')[1] : null;
+}
+
+// Auth middleware - accepts Basic auth OR session cookie
 function auth(req, res, next) {
+  // Try session cookie first
+  const token = getCookie(req, 'spiral_session');
+  if (token && sessions[token]) {
+    req.user = sessions[token];
+    return next();
+  }
+  // Fall back to Basic auth
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Basic ')) {
     res.set('WWW-Authenticate', 'Basic realm="Spiral Sussex Tracker"');
@@ -87,8 +116,12 @@ function auth(req, res, next) {
   next();
 }
 
-// Auth for HTML pages too - browser will show login prompt
+// Auth for HTML pages - sets session cookie on success
 function pageAuth(req, res, next) {
+  // Check session cookie
+  const token = getCookie(req, 'spiral_session');
+  if (token && sessions[token]) return next();
+  
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Basic ')) {
     res.set('WWW-Authenticate', 'Basic realm="Spiral Sussex Tracker"');
@@ -102,6 +135,9 @@ function pageAuth(req, res, next) {
     res.set('WWW-Authenticate', 'Basic realm="Spiral Sussex Tracker"');
     return res.status(401).send('Invalid credentials');
   }
+  // Set session cookie so API calls work
+  const sessionToken = createSession(user);
+  res.cookie('spiral_session', sessionToken, { httpOnly: true, maxAge: 86400000, sameSite: 'strict' });
   next();
 }
 

@@ -792,7 +792,7 @@ staff=staffProfiles.map(p=>p.name);
 
 async function serverLoad(){
 try{
-const r=await fetch('/api/data');
+const r=await fetch('/api/data',{credentials:'include'});
 if(r.status===401){showToast('Login failed');return false}
 if(!r.ok)throw 0;
 const json=await r.json();
@@ -830,10 +830,13 @@ try{
 const r=await fetch('/api/data',{
 method:'POST',
 headers:{'Content-Type':'application/json'},
+credentials:'include',
 body:JSON.stringify({data:getDataObj()})
 });
-if(!r.ok)throw 0;
-}catch{showToast('Server save failed — saved locally')}
+if(!r.ok)throw new Error('Status '+r.status);
+const syncDot=document.querySelector('.sync-server-dot');
+if(syncDot){syncDot.style.background='#22C55E';setTimeout(()=>{syncDot.style.background='#D1D5DB'},1500)}
+}catch(e){console.error('Server save error:',e);showToast('Server save failed — saved locally')}
 }
 function loadSyncCfg(){try{const c=JSON.parse(localStorage.getItem(SYNC_KEY));if(c)syncCfg=c}catch{}}
 function saveSyncCfg(){try{localStorage.setItem(SYNC_KEY,JSON.stringify(syncCfg))}catch{}}
@@ -943,7 +946,7 @@ function fileSize(bytes){if(bytes<1024)return bytes+'B';if(bytes<1048576)return(
 async function loadFiles(dept){
 if(!serverMode)return;
 try{
-const r=await fetch('/api/files?department='+(dept||'all'));
+const r=await fetch('/api/files?department='+(dept||'all'),{credentials:'include'});
 if(!r.ok)throw 0;
 const json=await r.json();
 filesCache=json.files||[];
@@ -964,7 +967,7 @@ form.append('category',fileUploadCat);
 form.append('department',fileUploadDept);
 try{
 showToast('Uploading...');
-const r=await fetch('/api/files',{method:'POST',body:form});
+const r=await fetch('/api/files',{method:'POST',credentials:'include',body:form});
 if(!r.ok)throw 0;
 showToast('Uploaded ✓');
 loadFiles();
@@ -976,7 +979,7 @@ input.click();
 async function deleteFile(id){
 if(!confirm('Delete this file?'))return;
 try{
-const r=await fetch('/api/files/'+id,{method:'DELETE'});
+const r=await fetch('/api/files/'+id,{method:'DELETE',credentials:'include'});
 if(!r.ok){const j=await r.json();showToast(j.error||'Delete failed');return}
 showToast('Deleted');
 loadFiles();
