@@ -615,6 +615,7 @@ let appMode='spiral'; // 'spiral' or 'foss'
 let fossData={departments:[],staffProfiles:[],contacts:[],completedLog:[]};
 let fossView='fossTasks',fossOpenD={},fossAddingTo=null,fossEditingT=null,fossNotesOpen={},fossFilterPri='all',fossFilterStaff='all',fossEditingStaff=null,fossNewStaff='',fossEditingContact=null;
 let newD={name:'',emoji:'📋',color:'#3A7BD5'},newStaff='',importTxt='',toastMsg='',toastTmr=null;
+let newSU={name:'',pn:'',dob:'',pc:'',ph:'',cn:'',cm:'',co:''};
 let filterPri='all',filterStaff='all',msForm=null;
 let syncCfg={url:'',autoSync:false,lastSync:null},syncStatus='disconnected',syncDebounce=null;
 let openDays={mon:true,tue:true,wed:true,thu:true,fri:true};
@@ -1030,6 +1031,8 @@ function addTask(dId){const d=D.find(x=>x.id===dId);if(!d)return;const inp=docum
 function addNote(dId,tId){const inp=document.getElementById('note-inp-'+tId);const txt=inp?.value?.trim();if(!txt)return;const d=D.find(x=>x.id===dId);if(d){const t=d.tasks.find(x=>x.id===tId);if(t){if(!t.notes)t.notes=[];t.notes.push({text:txt,time:new Date().toISOString()})}}save();render()}
 function addDepartment(){if(!newD.name.trim())return;D.push({id:uid(),name:newD.name.trim(),emoji:newD.emoji,color:newD.color,rag:'none',milestones:[],tasks:[]});newD={name:'',emoji:'📋',color:'#3A7BD5'};activeModal=null;save();render();showToast('Added')}
 function deleteDept(id){if(!confirm('Delete?'))return;D=D.filter(d=>d.id!==id);save();render()}
+function addSU(){if(!newSU.name.trim())return;const su={id:uid(),name:newSU.name.trim(),flags:[],days:[]};if(newSU.pn.trim())su.pn=newSU.pn.trim();if(newSU.dob)su.dob=newSU.dob;if(newSU.pc.trim())su.pc=newSU.pc.trim();if(newSU.ph.trim())su.ph=newSU.ph.trim();if(newSU.cn.trim())su.cn=newSU.cn.trim();if(newSU.cm.trim())su.cm=newSU.cm.trim();if(newSU.co.trim())su.co=newSU.co.trim();serviceUsers.push(su);newSU={name:'',pn:'',dob:'',pc:'',ph:'',cn:'',cm:'',co:''};activeModal=null;save();render();showToast('Service user added')}
+function deleteSU(id){const su=serviceUsers.find(u=>u.id===id);if(!su)return;if(!confirm('Delete '+su.name+'?'))return;serviceUsers=serviceUsers.filter(u=>u.id!==id);save();render();showToast('Deleted')}
 function moveUp(id){const i=D.findIndex(d=>d.id===id);if(i>0){[D[i-1],D[i]]=[D[i],D[i-1]];save();render()}}
 function moveDown(id){const i=D.findIndex(d=>d.id===id);if(i<D.length-1){[D[i+1],D[i]]=[D[i],D[i+1]];save();render()}}
 function setRag(id,r){const d=D.find(x=>x.id===id);if(d){d.rag=d.rag===r?'none':r;save();render()}}
@@ -1407,7 +1410,7 @@ h+=`<div class="su-card" onclick="showSUDetail('${su.id}')">`;
 h+=`<div style="display:flex;justify-content:space-between;align-items:start">`;
 h+=`<div><div class="su-card-name">${esc(su.name)}</div>`;
 if(su.pn)h+=`<div class="su-card-pref">Prefers: "${esc(su.pn)}"</div>`;
-h+=`</div></div>`;
+h+=`</div><button onclick="event.stopPropagation();deleteSU('${su.id}')" style="border:none;background:none;font-size:18px;color:#D1D5DB;cursor:pointer;padding:0 2px;line-height:1" title="Delete">×</button></div>`;
 if(su.flags&&su.flags.length)h+=`<div class="su-card-flags">${suFlagBadges(su.flags)}</div>`;
 if(su.days&&su.days.length)h+=`<div class="su-day-dots">${su.days.map(d=>'<span class="su-day-dot">'+DAY_NAMES[d].slice(0,3)+'</span>').join('')}</div>`;
 h+=`<div class="su-card-meta">`;
@@ -1420,6 +1423,7 @@ h+=`</div></div>`;
 });
 h+=`</div></div>`;
 }
+h+=`<button class="add-dept" onclick="activeModal='addSU';render()" style="margin-top:8px">+ Add Service User</button>`;
 }
 
 // ===== REGISTER TAB =====
@@ -2009,6 +2013,7 @@ h+=`<div style="background:white;border-radius:12px;overflow:hidden;box-shadow:0
 // ===== MODALS =====
 if(activeModal==='addDept'){h+=`<div class="mov" onclick="activeModal=null;render()"><div class="msh" onclick="event.stopPropagation()"><div class="mha"></div><div class="mti">Add Department</div><div style="display:flex;flex-direction:column;gap:12px"><div><label class="mlbl">Name</label><input class="minp" id="nd-nm" value="${esc(newD.name)}" placeholder="e.g. Training" oninput="newD.name=this.value" onkeydown="if(event.key==='Enter')addDepartment()"></div><div><label class="mlbl">Icon</label><div class="emgrid">${EM.map(e=>`<button class="embtn ${newD.emoji===e?'sel':''}" onclick="newD.emoji='${e}';render()">${e}</button>`).join('')}</div></div><div><label class="mlbl">Colour</label><div class="clgrid">${CL.map(c=>`<button class="clbtn" style="background:${c};${newD.color===c?`box-shadow:0 0 0 3px white,0 0 0 4px ${c}`:''}" onclick="newD.color='${c}';render()"></button>`).join('')}</div></div><button class="mbtn dark" ${!newD.name.trim()?'disabled':''} onclick="addDepartment()">Add Department</button></div></div></div>`}
 if(activeModal==='staff'){h+=`<div class="mov" onclick="activeModal=null;render()"><div class="msh" onclick="event.stopPropagation()"><div class="mha"></div><div class="mti">Team Members</div>`;staff.forEach(s=>{const tc=D.reduce((n,d)=>n+d.tasks.filter(t=>t.assignee===s).length,0),dc=D.reduce((n,d)=>n+d.tasks.filter(t=>t.assignee===s&&t.done).length,0);h+=`<div class="strow"><div class="stav" style="background:${stClr(s)}">${stIni(s)}</div><div style="flex:1"><div class="stnm">${esc(s)}</div><div class="stsub">${tc} tasks · ${dc} done</div></div><button class="strem" onclick="removeStaffMember('${esc(s)}')">×</button></div>`});h+=`<div style="display:flex;gap:6px;margin-top:8px"><input class="minp" id="ns-inp" placeholder="New member..." value="${esc(newStaff)}" oninput="newStaff=this.value" onkeydown="if(event.key==='Enter')addStaffMember()" style="flex:1"><button class="mbtn dark" style="width:auto;padding:11px 18px;margin:0" onclick="addStaffMember()">Add</button></div></div></div>`}
+if(activeModal==='addSU'){h+=`<div class="mov" onclick="activeModal=null;render()"><div class="msh" onclick="event.stopPropagation()"><div class="mha"></div><div class="mti">Add Service User</div><div style="display:flex;flex-direction:column;gap:10px"><div><label class="mlbl">Full Name *</label><input class="minp" id="nsu-name" value="${esc(newSU.name)}" placeholder="e.g. John Smith" oninput="newSU.name=this.value" onkeydown="if(event.key==='Enter')addSU()"></div><div><label class="mlbl">Preferred Name</label><input class="minp" value="${esc(newSU.pn)}" placeholder="e.g. Johnny" oninput="newSU.pn=this.value"></div><div style="display:flex;gap:8px"><div style="flex:1"><label class="mlbl">Date of Birth</label><input class="minp" type="date" value="${esc(newSU.dob)}" oninput="newSU.dob=this.value"></div><div style="flex:1"><label class="mlbl">Postcode</label><input class="minp" value="${esc(newSU.pc)}" placeholder="e.g. BN1 1AA" oninput="newSU.pc=this.value"></div></div><div><label class="mlbl">Phone</label><input class="minp" value="${esc(newSU.ph)}" placeholder="Phone number" oninput="newSU.ph=this.value"></div><div><label class="mlbl">Carer / Next of Kin</label><input class="minp" value="${esc(newSU.cn)}" placeholder="Carer name" oninput="newSU.cn=this.value"></div><div><label class="mlbl">Carer Mobile</label><input class="minp" value="${esc(newSU.cm)}" placeholder="Carer mobile" oninput="newSU.cm=this.value"></div><div><label class="mlbl">Care Organisation</label><input class="minp" value="${esc(newSU.co)}" placeholder="e.g. Southdown Housing" oninput="newSU.co=this.value"></div><button class="mbtn dark" ${!newSU.name.trim()?'disabled':''} onclick="addSU()">Add Service User</button></div></div></div>`}
 if(activeModal==='sheets'){h+=`<div class="mov" onclick="activeModal=null;render()"><div class="msh" onclick="event.stopPropagation()"><div class="mha"></div><div class="mti">Export</div><button class="mbtn green" onclick="copyForSheets()">📋 Copy for Sheets</button><button class="mbtn outline" onclick="downloadCSV()">⬇️ Download CSV</button></div></div>`}
 if(activeModal==='sync'){const has=!!syncCfg.url;h+=`<div class="mov" onclick="activeModal=null;render()"><div class="msh" onclick="event.stopPropagation()"><div class="mha"></div><div class="mti">🔄 Sheets Sync</div>`;
 if(!has){h+=`<p class="mdesc">Connect to a Google Sheet for live sync. One-time setup:</p><div class="setup-steps"><div class="setup-step"><div class="step-num"></div><div class="step-body"><strong>Create a Sheet</strong> at <a href="https://sheets.new" target="_blank" style="color:#3A7BD5">sheets.new</a></div></div><div class="setup-step"><div class="step-num"></div><div class="step-body"><strong>Extensions → Apps Script</strong> — paste this code: <div style="position:relative"><div class="code-block">${esc(APPS_SCRIPT_CODE).slice(0,200)}...</div><button class="copy-btn" onclick="event.stopPropagation();copyAppsScript()">Copy Full Script</button></div></div></div><div class="setup-step"><div class="step-num"></div><div class="step-body"><strong>Deploy → New deployment → Web app</strong><br>Execute as: Me · Access: Anyone → Deploy → Copy URL</div></div></div>`}
@@ -2026,6 +2031,7 @@ h+=`<div class="toast ${toastMsg?'visible':''}">${esc(toastMsg)}</div>`;
 document.getElementById('app').innerHTML=h;
 if(activeModal==='addDept'){const el=document.getElementById('nd-nm');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length)}}
 if(activeModal==='staff'){const el=document.getElementById('ns-inp');if(el)el.focus()}
+if(activeModal==='addSU'){const el=document.getElementById('nsu-name');if(el)el.focus()}
 if(view==='sus'){const el=document.querySelector('.su-search');if(el&&suPageSearch){el.focus();el.setSelectionRange(el.value.length,el.value.length)}}
 }
 
