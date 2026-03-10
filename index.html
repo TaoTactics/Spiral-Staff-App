@@ -705,7 +705,7 @@ if(su.comm)h+=`<div class="su-detail-row"><span class="lbl">Comms</span><span cl
 h+=`</div>`}
 // Attendance Days
 h+=`<div class="su-detail-section"><h4>📅 Scheduled Days</h4><div class="su-days-row">`;
-DAYS.forEach(d=>{
+ROTA_DAYS.forEach(d=>{
 const isOn=(su.days||[]).includes(d);
 if(appMode==='foss'){
 h+=`<span class="su-day-tog ${isOn?'on':''}" style="cursor:default">${DAY_NAMES[d].slice(0,3)}</span>`;
