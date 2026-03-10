@@ -1383,14 +1383,14 @@ h+=`<div class="su-page-count">${filtered.length===serviceUsers.length?`All ${fi
 
 // SU view - attendance grid or cards
 if(suAttView){
-const dayTotals={};DAYS.forEach(d=>{dayTotals[d]=filtered.filter(su=>(su.days||[]).includes(d)).length});
+const dayTotals={};ROTA_DAYS.forEach(d=>{dayTotals[d]=filtered.filter(su=>(su.days||[]).includes(d)).length});
 h+=`<div class="att-grid"><table class="att-table"><thead><tr><th>Service User</th>`;
-DAYS.forEach(d=>{h+=`<th>${DAY_NAMES[d].slice(0,3)}<br><span style="font-size:9px;color:#9CA3AF;font-weight:500">${dayTotals[d]}</span></th>`});
+ROTA_DAYS.forEach(d=>{h+=`<th>${DAY_NAMES[d].slice(0,3)}<br><span style="font-size:9px;color:#9CA3AF;font-weight:500">${dayTotals[d]}</span></th>`});
 h+=`<th>Total</th></tr></thead><tbody>`;
 filtered.forEach(su=>{
 const days=su.days||[];
 h+=`<tr><td onclick="showSUDetail('${su.id}')" style="cursor:pointer">${esc(su.name)}</td>`;
-DAYS.forEach(d=>{
+ROTA_DAYS.forEach(d=>{
 const on=days.includes(d);
 h+=`<td><button class="att-check ${on?'on':'off'}" onclick="event.stopPropagation();toggleSUDay('${su.id}','${d}')">${on?'\u2713':''}</button></td>`;
 });
@@ -1398,7 +1398,7 @@ h+=`<td style="font-weight:700;color:#6366F1">${days.length}</td></tr>`;
 });
 h+=`</tbody></table></div>`;
 h+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">`;
-DAYS.forEach(d=>{h+=`<div style="background:white;border-radius:10px;padding:8px 12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center;min-width:50px"><div style="font-size:18px;font-weight:700;color:#6366F1">${dayTotals[d]}</div><div style="font-size:10px;color:#6B7280;font-weight:600">${DAY_NAMES[d].slice(0,3)}</div></div>`});
+ROTA_DAYS.forEach(d=>{h+=`<div style="background:white;border-radius:10px;padding:8px 12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center;min-width:50px"><div style="font-size:18px;font-weight:700;color:#6366F1">${dayTotals[d]}</div><div style="font-size:10px;color:#6B7280;font-weight:600">${DAY_NAMES[d].slice(0,3)}</div></div>`});
 h+=`</div></div>`;
 } else {
 h+=`<div class="su-card-grid">`;
