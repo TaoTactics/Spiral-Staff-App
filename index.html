@@ -673,84 +673,157 @@ const su=serviceUsers.find(u=>u.id===viewingSU);
 if(!su)return'';
 const isEditing=editingSUFields&&editingSUFields.id===su.id;
 const e=isEditing?editingSUFields:su;
-const inp=(f,placeholder,type)=>`<input style="width:100%;border:1px solid #E5E7EB;border-radius:8px;padding:7px 9px;font-size:12px;outline:none;font-family:inherit" type="${type||'text'}" value="${esc(e[f]||'')}" placeholder="${placeholder||''}" oninput="suEditField('${f}',this.value)">`;
-const ta=(f,placeholder)=>`<textarea style="width:100%;border:1px solid #E5E7EB;border-radius:8px;padding:7px 9px;font-size:12px;outline:none;font-family:inherit;resize:vertical;min-height:56px" placeholder="${placeholder||''}" oninput="suEditField('${f}',this.value)">${esc(e[f]||'')}</textarea>`;
-const row=(lbl,content)=>`<div class="su-detail-row" style="flex-direction:column;gap:3px"><span class="lbl">${lbl}</span>${content}</div>`;
+const inp=(f,ph,type)=>`<input style="width:100%;border:1px solid #E5E7EB;border-radius:8px;padding:7px 9px;font-size:12px;outline:none;font-family:inherit" type="${type||'text'}" value="${esc(e[f]||'')}" placeholder="${ph||''}" oninput="suEditField('${f}',this.value)">`;
+const ta=(f,ph)=>`<textarea style="width:100%;border:1px solid #E5E7EB;border-radius:8px;padding:7px 9px;font-size:12px;outline:none;font-family:inherit;resize:vertical;min-height:56px" placeholder="${ph||''}" oninput="suEditField('${f}',this.value)">${esc(e[f]||'')}</textarea>`;
+const row=(lbl,content)=>`<div style="display:flex;flex-direction:column;gap:3px;margin-bottom:2px"><span style="font-size:10px;font-weight:700;color:#6B7280;text-transform:uppercase;letter-spacing:0.4px">${lbl}</span>${content}</div>`;
+const dr=(lbl,val)=>val?`<div class="su-detail-row"><span class="lbl">${lbl}</span><span class="val">${esc(val)}</span></div>`:'';
+const pair=(a,b)=>`<div style="display:flex;gap:8px">${a}${b}</div>`;
 let h=`<div class="su-detail-overlay" onclick="if(event.target===this){cancelEditSU();closeSUDetail()}"><div class="su-detail-card">`;
-// Header
 h+=`<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">`;
-if(isEditing){
-h+=`<div style="flex:1;margin-right:8px"><input style="width:100%;border:1px solid #E5E7EB;border-radius:8px;padding:7px 9px;font-size:15px;font-weight:700;outline:none;font-family:inherit" value="${esc(e.name)}" placeholder="Full name" oninput="suEditField('name',this.value)"></div>`;
-}else{
-h+=`<div><h3>${esc(su.name)}</h3>${su.pn?`<div class="su-pref">Prefers: "${esc(su.pn)}"</div>`:''}${(su.flags||[]).length?`<div style="margin:6px 0">${suFlagBadges(su.flags)}</div>`:''}</div>`;
-}
+if(isEditing){h+=`<div style="flex:1;margin-right:8px"><input style="width:100%;border:1px solid #E5E7EB;border-radius:8px;padding:7px 9px;font-size:15px;font-weight:700;outline:none;font-family:inherit" value="${esc(e.name)}" placeholder="Full name" oninput="suEditField('name',this.value)"></div>`;}
+else{h+=`<div><h3>${esc(su.name)}</h3>${su.pn?`<div class="su-pref">Prefers: "${esc(su.pn)}"</div>`:''}${(su.flags||[]).length?`<div style="margin:6px 0">${suFlagBadges(su.flags)}</div>`:''}</div>`;}
 h+=`<div style="display:flex;gap:4px">`;
 if(!isEditing)h+=`<button onclick="startEditSU('${su.id}')" style="border:none;background:#EEF2FF;color:#6366F1;border-radius:8px;padding:6px 10px;font-size:11px;font-weight:600;cursor:pointer">✏️ Edit</button>`;
 h+=`<button onclick="cancelEditSU();closeSUDetail()" style="border:none;background:#F3F4F6;border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:16px">✕</button>`;
 h+=`</div></div>`;
 if(isEditing){
-// Edit form
 h+=`<div style="display:flex;flex-direction:column;gap:10px">`;
-h+=`<div style="display:flex;gap:8px">${row('Preferred Name',inp('pn','e.g. Johnny'))}${row('Date of Birth',inp('dob','','date'))}</div>`;
-h+=`<div style="display:flex;gap:8px">${row('Postcode',inp('pc','e.g. BN1 1AA'))}${row('Phone',inp('ph','Phone'))}</div>`;
+// Personal
+h+=`<div class="su-detail-section"><h4>👤 Personal</h4><div style="display:flex;flex-direction:column;gap:6px">`;
+h+=pair(row('Preferred Name',inp('pn','e.g. Johnny')),row('Date of Birth',inp('dob','','date')));
+h+=row('Address',inp('addr','Street address'));
+h+=pair(row('Town',inp('town','Town')),row('Postcode',inp('pc','BN1 1AA')));
+h+=pair(row('Phone',inp('ph','Phone')),row('Email',inp('em','Email')));
+h+=pair(row('First Language',inp('lang','Language')),row('Other Languages',inp('lang2','Other')));
+h+=row('Who lives in my house?',inp('household','Household'));
+h+=`</div></div>`;
+// About Me
+h+=`<div class="su-detail-section"><h4>🌟 About Me</h4><div style="display:flex;flex-direction:column;gap:6px">`;
+h+=row('Special people in my life',inp('specialPeople','Family, friends...'));
+h+=row('Things that excite me and make me happy',ta('excites','What makes me happy...'));
+h+=row('Favourite activities, books, places',ta('favActivities','Hobbies, interests...'));
+h+=row('Things I like doing outside',inp('outdoors','Outdoor activities'));
+h+=row('My weekly routines',ta('routines','Typical week...'));
+h+=pair(row('Celebrations',inp('celebrates','What we celebrate')),row('Experience away from family',inp('awayExp','How I manage...')));
+h+=row('Important events in my life',ta('importantEvents','Milestones, memories...'));
+h+=`</div></div>`;
+// Support & Communication
+h+=`<div class="su-detail-section"><h4>💬 Support & Communication</h4><div style="display:flex;flex-direction:column;gap:6px">`;
+h+=row('How I communicate',ta('comm','Communication style...'));
+h+=row('How I respond to new people or situations',ta('newPeople','Response to new people...'));
+h+=row('Things I can get angry or upset about',ta('angryTriggers','Triggers...'));
+h+=pair(row('Things that comfort me',inp('comfortThings','Comfort strategies')),row('How I handle disappointment',inp('disappointment','Handles disappointment')));
+h+=row("Things I'm good at",ta('goodAt','Strengths...'));
+h+=row('Things I need help with',ta('needsHelp','Support needs...'));
+h+=`</div></div>`;
+// Food & Drink
+h+=`<div class="su-detail-section"><h4>🍽️ Food & Drink</h4><div style="display:flex;flex-direction:column;gap:6px">`;
+h+=pair(row('I usually eat',inp('usualEat','Typical diet')),row('I do not like',inp('dislikes','Dislikes')));
+h+=pair(row('Favourite foods',inp('favFoods','Favourite foods')),row('Favourite drinks',inp('favDrinks','Favourite drinks')));
+h+=`</div></div>`;
+// Goals
+h+=`<div class="su-detail-section"><h4>🎯 Goals</h4>${row('What goals I would like to achieve',ta('goals','Goals...'))}</div>`;
 // Flags
-h+=`<div><div class="su-detail-row" style="flex-direction:column;gap:5px"><span class="lbl">Flags</span><div style="display:flex;flex-wrap:wrap;gap:4px">`;
+h+=`<div class="su-detail-section"><h4>🚩 Flags</h4><div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">`;
 Object.keys(FLAG_INFO).forEach(f=>{const on=(editingSUFields.flags||[]).includes(f);h+=`<button onclick="toggleEditSUFlag('${f}')" style="border:1.5px solid ${on?'#6366F1':'#E5E7EB'};background:${on?'#EEF2FF':'white'};border-radius:6px;padding:3px 8px;font-size:10px;font-weight:700;cursor:pointer" title="${FLAG_INFO[f]}">${f}</button>`});
-h+=`</div></div></div>`;
+h+=`</div>`;
+const ef=editingSUFields.flags||[];
+if(ef.includes('V/H'))h+=`<div style="margin-top:4px">${row('Visual/Hearing details',ta('vhDetails','Details...'))}</div>`;
+if(ef.includes('M'))h+=`<div style="margin-top:4px">${row('Mobility details',ta('mobilityDetails','Details...'))}</div>`;
+if(ef.includes('DS'))h+=`<div style="margin-top:4px">${row('Atlanto-axial instability X-Ray result',inp('dsXray','X-Ray result'))}</div>`;
+if(ef.includes('E'))h+=`<div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">${row('Epilepsy — how often?',inp('epilepsyFreq','Frequency'))}${row('Requires rectal/buccal medication?',inp('epilepsyMed','Yes/No + details'))}${row('Additional epilepsy details',ta('epilepsyAdd','Details...'))}</div>`;
+if(ef.includes('Di'))h+=`<div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">${row('Diabetes — how often hypo?',inp('diabetesFreq','Frequency'))}${row('Requires injected medication?',inp('diabetesMed','Yes/No'))}${row('Additional diabetes details',ta('diabetesAdd','Details...'))}</div>`;
+if(ef.includes('A'))h+=`<div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">${row('Asthma — how often severe attacks?',inp('asthmaFreq','Frequency'))}${row('Requires nebulised medication?',inp('asthmaMed','Yes/No'))}${row('Hospitalised with severe attack last year?',inp('asthmaHosp','Yes/No'))}${row('Additional asthma details',ta('asthmaAdd','Details...'))}</div>`;
+if(ef.includes('H'))h+=`<div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">${row('Attends cardiology clinic?',inp('heartClinic','Yes/No'))}${row('Special precautions',ta('heartPrecautions','Precautions...'))}</div>`;
+h+=`</div>`;
+// Carer
 h+=`<div class="su-detail-section"><h4>🤝 Carer</h4><div style="display:flex;flex-direction:column;gap:6px">`;
 h+=row('Organisation',inp('co','Care organisation'));
-h+=row('Carer Name',inp('cn','Carer / next of kin'));
-h+=row('Carer Mobile',inp('cm','Mobile number'));
+h+=pair(row('Carer Name',inp('cn','Carer / next of kin')),row('Mobile',inp('cm','Mobile')));
+h+=pair(row('Home Phone',inp('chp','Home phone')),row('Email',inp('cem','Email')));
+h+=row('Carer Address',inp('cadr','Address'));
 h+=`</div></div>`;
-h+=`<div class="su-detail-section"><h4>🚨 Emergency Contact</h4><div style="display:flex;gap:8px">`;
-h+=row('Name',inp('ec1','Contact name'));
-h+=row('Phone',inp('ep1','Phone'));
+// Emergency Contacts
+h+=`<div class="su-detail-section"><h4>🚨 Emergency Contacts</h4><div style="display:flex;flex-direction:column;gap:6px">`;
+h+=pair(row('Contact 1',inp('ec1','Name')),row('Phone',inp('ep1','Phone')));
+h+=pair(row('Contact 2',inp('ec2','Name')),row('Phone',inp('ep2','Phone')));
 h+=`</div></div>`;
+// Medical
 h+=`<div class="su-detail-section"><h4>🏥 Medical</h4><div style="display:flex;flex-direction:column;gap:6px">`;
-h+=row('Conditions',ta('med','Medical conditions'));
-h+=row('Allergies',inp('allg','Allergies'));
-h+=row('Dietary',inp('diet','Dietary requirements'));
-h+=row('Medication Admin',ta('ma','Medication administration notes'));
-h+=`<div style="display:flex;gap:8px">${row('GP',inp('gp','GP name'))}${row('Surgery',inp('surg','Surgery name'))}</div>`;
+h+=row('Medical Conditions & Disabilities',ta('med','Conditions...'));
+h+=pair(row('Allergies',inp('allg','Allergies')),row('Food Allergy Details',inp('foodAllergyDet','Details')));
+h+=pair(row('Dietary Needs',inp('diet','Dietary')),row('Vegetarian?',inp('vegetarian','Yes/No')));
+h+=row('Other dietary requirements / feeding aids',inp('otherDietReq','Details'));
+h+=row('Other medical conditions / injuries',ta('otherMed','Details...'));
+h+=row('Recent treatment / hospitalised (last 2 years)',ta('hospitalHistory','Details...'));
+h+=row('Medication Administration Notes',ta('ma','Admin notes...'));
+h+=`<div>${row('Medication Admin Consent',`<select style="width:100%;border:1px solid #E5E7EB;border-radius:8px;padding:7px 9px;font-size:12px;outline:none;background:white" onchange="suEditField('maType',this.value)"><option value="">Select...</option><option value="1. Administration" ${e.maType==='1. Administration'?'selected':''}>1. Administration (staff give)</option><option value="2. Self-administered" ${e.maType==='2. Self-administered'?'selected':''}>2. Self-administered</option><option value="3. Monitored" ${e.maType==='3. Monitored'?'selected':''}>3. Monitored</option></select>`)}</div>`;
+h+=pair(row('GP Name',inp('gp','GP name')),row('Surgery',inp('surg','Surgery name')));
+h+=row('Clinic Address',inp('clinicAddr','Clinic address'));
+h+=pair(row('Emergency Clinic Contact',inp('clinicContact','Contact name')),row('Phone',inp('clinicPhone','Phone')));
 h+=`</div></div>`;
-h+=`<div class="su-detail-section"><h4>💡 Behaviour & Communication</h4><div style="display:flex;flex-direction:column;gap:6px">`;
-h+=row('Behaviour Notes',ta('beh','Behaviour notes'));
-h+=row('Communication',ta('comm','Communication notes'));
+// Behaviour
+h+=`<div class="su-detail-section"><h4>⚠️ Behaviour</h4><div style="display:flex;flex-direction:column;gap:6px">`;
+h+=row('Behavioural Issues (general)',ta('beh','Behaviour notes...'));
+h+=row('Aggressive / abusive behaviour details',ta('aggressiveDet','Details...'));
+h+=row('Self-harm details',ta('selfHarmDet','Details...'));
+h+=row('Socially inappropriate behaviour details',ta('inappropriateDet','Details...'));
 h+=`</div></div>`;
+// Support Needs
+h+=`<div class="su-detail-section"><h4>🤲 Support Needs</h4><div style="display:flex;flex-direction:column;gap:6px">`;
+h+=row('Walking off details',ta('walkOffDet','Details...'));
+h+=row('Walking difficulties details',ta('walkDiffDet','Details...'));
+h+=row('Toileting / Incontinence details',ta('toiletingDet','Details...'));
+h+=pair(row('Snoring / Insomnia details',inp('snoreDet','Details')),row('Other support needs',inp('otherSupportDet','Details')));
+h+=`</div></div>`;
+// Scheduled Days
 h+=`<div class="su-detail-section"><h4>📅 Scheduled Days</h4><div class="su-days-row">`;
 ROTA_DAYS.forEach(d=>{const isOn=(editingSUFields.days||[]).includes(d);h+=`<button class="su-day-tog ${isOn?'on':''}" onclick="event.stopPropagation();if(editingSUFields){const idx=editingSUFields.days.indexOf('${d}');if(idx>=0)editingSUFields.days.splice(idx,1);else editingSUFields.days.push('${d}');render()}">${DAY_NAMES[d].slice(0,3)}</button>`});
 h+=`</div></div>`;
-h+=`<div style="display:flex;gap:8px;margin-top:4px">`;
-h+=`<button onclick="saveEditSU()" style="flex:1;border:none;background:#1F2937;color:white;border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer">Save</button>`;
-h+=`<button onclick="cancelEditSU()" style="border:none;background:#F3F4F6;color:#6B7280;border-radius:10px;padding:11px 16px;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>`;
-h+=`</div></div>`;
+h+=`<div style="display:flex;gap:8px;margin-top:4px"><button onclick="saveEditSU()" style="flex:1;border:none;background:#1F2937;color:white;border-radius:10px;padding:11px;font-size:13px;font-weight:600;cursor:pointer">Save</button><button onclick="cancelEditSU()" style="border:none;background:#F3F4F6;color:#6B7280;border-radius:10px;padding:11px 16px;font-size:13px;font-weight:600;cursor:pointer">Cancel</button></div>`;
+h+=`</div>`;
 }else{
 // Read-only view
 h+=`<div class="su-detail-section"><h4>📋 Contact</h4>`;
-if(su.dob)h+=`<div class="su-detail-row"><span class="lbl">DOB</span><span class="val">${esc(su.dob)}</span></div>`;
-if(su.pc)h+=`<div class="su-detail-row"><span class="lbl">Postcode</span><span class="val">${esc(su.pc)}</span></div>`;
-if(su.ph)h+=`<div class="su-detail-row"><span class="lbl">Phone</span><span class="val">${esc(su.ph)}</span></div>`;
-if(su.em)h+=`<div class="su-detail-row"><span class="lbl">Email</span><span class="val">${esc(su.em)}</span></div>`;
+h+=dr('DOB',su.dob)+dr('Address',[su.addr,su.town,su.pc].filter(Boolean).join(', '))+dr('Phone',su.ph)+dr('Email',su.em);
 h+=`</div>`;
+if(su.lang||su.household){h+=`<div class="su-detail-section"><h4>🏡 Home & Language</h4>`;
+h+=dr('First language',su.lang)+dr('Other languages',su.lang2)+dr('Household',su.household)+dr('Away experience',su.awayExp);h+=`</div>`}
+if([su.specialPeople,su.excites,su.favActivities,su.outdoors,su.routines,su.celebrates,su.importantEvents].some(Boolean)){
+h+=`<div class="su-detail-section"><h4>🌟 About Me</h4>`;
+h+=dr('Special people',su.specialPeople)+dr('Things that excite me',su.excites)+dr('Favourite activities',su.favActivities)+dr('Outdoor activities',su.outdoors)+dr('Weekly routines',su.routines)+dr('Celebrations',su.celebrates)+dr('Important events',su.importantEvents);h+=`</div>`}
+if([su.comm,su.newPeople,su.angryTriggers,su.comfortThings,su.disappointment,su.goodAt,su.needsHelp].some(Boolean)){
+h+=`<div class="su-detail-section"><h4>💬 Support & Communication</h4>`;
+h+=dr('Communication',su.comm)+dr('New people/situations',su.newPeople)+dr('Anger triggers',su.angryTriggers)+dr('Comfort',su.comfortThings)+dr('Disappointment',su.disappointment)+dr('Good at',su.goodAt)+dr('Needs help with',su.needsHelp);h+=`</div>`}
+if(su.favFoods||su.favDrinks||su.usualEat||su.dislikes){h+=`<div class="su-detail-section"><h4>🍽️ Food & Drink</h4>`;
+h+=dr('Usually eats',su.usualEat)+dr('Favourite foods',su.favFoods)+dr('Favourite drinks',su.favDrinks)+dr('Dislikes',su.dislikes);h+=`</div>`}
+if(su.goals){h+=`<div class="su-detail-section"><h4>🎯 Goals</h4>${dr('Goals',su.goals)}</div>`}
 if(su.cn||su.co){h+=`<div class="su-detail-section"><h4>🤝 Carer</h4>`;
-if(su.co)h+=`<div class="su-detail-row"><span class="lbl">Organisation</span><span class="val">${esc(su.co)}</span></div>`;
-if(su.cn)h+=`<div class="su-detail-row"><span class="lbl">Name</span><span class="val">${esc(su.cn)}</span></div>`;
-if(su.cm)h+=`<div class="su-detail-row"><span class="lbl">Mobile</span><span class="val">${esc(su.cm)}</span></div>`;
-h+=`</div>`}
-if(su.ec1){h+=`<div class="su-detail-section"><h4>🚨 Emergency</h4>`;
-h+=`<div class="su-detail-row"><span class="lbl">Contact 1</span><span class="val">${esc(su.ec1)} ${su.ep1?'· '+esc(su.ep1):''}</span></div>`;
-h+=`</div>`}
+h+=dr('Organisation',su.co)+dr('Name',su.cn)+dr('Mobile',su.cm)+dr('Home phone',su.chp)+dr('Email',su.cem)+dr('Address',su.cadr);h+=`</div>`}
+if(su.ec1||su.ec2){h+=`<div class="su-detail-section"><h4>🚨 Emergency Contacts</h4>`;
+if(su.ec1)h+=dr('Contact 1',su.ec1+(su.ep1?' · '+su.ep1:''));
+if(su.ec2)h+=dr('Contact 2',su.ec2+(su.ep2?' · '+su.ep2:''));h+=`</div>`}
 h+=`<div class="su-detail-section"><h4>🏥 Medical</h4>`;
-if(su.med)h+=`<div class="su-detail-row"><span class="lbl">Conditions</span><span class="val">${esc(su.med)}</span></div>`;
-if(su.allg)h+=`<div class="su-detail-row"><span class="lbl">Allergies</span><span class="val">${esc(su.allg)}</span></div>`;
-if(su.diet)h+=`<div class="su-detail-row"><span class="lbl">Dietary</span><span class="val">${esc(su.diet)}</span></div>`;
-if(su.ma)h+=`<div class="su-detail-row"><span class="lbl">Medication</span><span class="val">${esc(su.ma)}</span></div>`;
-if(su.gp||su.surg)h+=`<div class="su-detail-row"><span class="lbl">GP/Surgery</span><span class="val">${su.gp?esc(su.gp):''} ${su.surg?'@ '+esc(su.surg):''}</span></div>`;
+h+=dr('Conditions',su.med)+dr('Allergies',su.allg)+dr('Food allergies',su.foodAllergyDet)+dr('Dietary',su.diet)+dr('Vegetarian',su.vegetarian)+dr('Other dietary',su.otherDietReq)+dr('Other medical',su.otherMed)+dr('Recent treatment',su.hospitalHistory)+dr('Medication admin',su.ma)+dr('MA Consent',su.maType);
+if(su.gp||su.surg)h+=dr('GP/Surgery',(su.gp||'')+(su.surg?' @ '+su.surg:''));
+h+=dr('Clinic',su.clinicAddr)+dr('Emergency clinic',[su.clinicContact,su.clinicPhone].filter(Boolean).join(' · '));
 h+=`</div>`;
-if(su.beh||su.comm){h+=`<div class="su-detail-section"><h4>💡 Behaviour & Communication</h4>`;
-if(su.beh)h+=`<div class="su-detail-row"><span class="lbl">Behaviour</span><span class="val">${esc(su.beh)}</span></div>`;
-if(su.comm)h+=`<div class="su-detail-row"><span class="lbl">Comms</span><span class="val">${esc(su.comm)}</span></div>`;
-h+=`</div>`}
+const flgs=su.flags||[];
+const flagDets=[];
+if(flgs.includes('V/H')&&su.vhDetails)flagDets.push(['Visual/Hearing',su.vhDetails]);
+if(flgs.includes('M')&&su.mobilityDetails)flagDets.push(['Mobility',su.mobilityDetails]);
+if(flgs.includes('DS')&&su.dsXray)flagDets.push(['DS X-Ray',su.dsXray]);
+if(flgs.includes('E')&&(su.epilepsyFreq||su.epilepsyMed||su.epilepsyAdd))flagDets.push(['Epilepsy',[su.epilepsyFreq,su.epilepsyMed,su.epilepsyAdd].filter(Boolean).join(' · ')]);
+if(flgs.includes('Di')&&(su.diabetesFreq||su.diabetesAdd))flagDets.push(['Diabetes',[su.diabetesFreq,su.diabetesMed,su.diabetesAdd].filter(Boolean).join(' · ')]);
+if(flgs.includes('A')&&(su.asthmaFreq||su.asthmaAdd))flagDets.push(['Asthma',[su.asthmaFreq,su.asthmaMed,su.asthmaAdd].filter(Boolean).join(' · ')]);
+if(flgs.includes('H')&&(su.heartClinic||su.heartPrecautions))flagDets.push(['Heart',[su.heartClinic,su.heartPrecautions].filter(Boolean).join(' · ')]);
+if(flagDets.length){h+=`<div class="su-detail-section"><h4>🚩 Flag Details</h4>`;flagDets.forEach(([l,v])=>{h+=dr(l,v)});h+=`</div>`}
+if([su.beh,su.aggressiveDet,su.selfHarmDet,su.inappropriateDet].some(Boolean)){
+h+=`<div class="su-detail-section"><h4>⚠️ Behaviour</h4>`;
+h+=dr('Behaviour',su.beh)+dr('Aggressive behaviour',su.aggressiveDet)+dr('Self-harm',su.selfHarmDet)+dr('Inappropriate behaviour',su.inappropriateDet);h+=`</div>`}
+if([su.walkOffDet,su.walkDiffDet,su.toiletingDet,su.snoreDet,su.otherSupportDet].some(Boolean)){
+h+=`<div class="su-detail-section"><h4>🤲 Support Needs</h4>`;
+h+=dr('Walking off',su.walkOffDet)+dr('Walking difficulties',su.walkDiffDet)+dr('Toileting',su.toiletingDet)+dr('Snoring/Insomnia',su.snoreDet)+dr('Other',su.otherSupportDet);h+=`</div>`}
 h+=`<div class="su-detail-section"><h4>📅 Scheduled Days</h4><div class="su-days-row">`;
 ROTA_DAYS.forEach(d=>{const isOn=(su.days||[]).includes(d);
 if(appMode==='foss'){h+=`<span class="su-day-tog ${isOn?'on':''}" style="cursor:default">${DAY_NAMES[d].slice(0,3)}</span>`;}
