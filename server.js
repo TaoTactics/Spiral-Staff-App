@@ -90,6 +90,17 @@ function getCookie(req, name) {
   return match ? match.split('=')[1] : null;
 }
 
+// Valid roles
+const VALID_ROLES = ['superadmin', 'manager', 'staff', 'driver', 'serviceuser', 'carer'];
+
+// Role helpers
+function isAdmin(req) {
+  return req.user.role === 'superadmin' || req.user.role === 'admin';
+}
+function isManagerOrAbove(req) {
+  return isAdmin(req) || req.user.role === 'manager';
+}
+
 // Auth middleware - accepts Basic auth OR session cookie
 function auth(req, res, next) {
   // Try session cookie first
@@ -200,7 +211,7 @@ app.get('/api/backups', auth, (req, res) => {
 // Restore a backup
 app.post('/api/backups/:id/restore', auth, (req, res) => {
   try {
-    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    if (!isAdmin(req)) return res.status(403).json({ error: 'Admin only' });
     const backup = db.prepare('SELECT data FROM backups WHERE id = ?').get(req.params.id);
     if (!backup) return res.status(404).json({ error: 'Backup not found' });
     
@@ -220,29 +231,56 @@ app.get('/api/me', auth, (req, res) => {
   res.json({ user: req.user });
 });
 
-// ====== USER MANAGEMENT (admin only) ======
+// ====== USER MANAGEMENT (superadmin only) ======
 
 app.get('/api/users', auth, (req, res) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Admin only' });
   const users = db.prepare('SELECT id, username, role, created_at FROM users').all();
   res.json({ users });
 });
 
 app.post('/api/users', auth, (req, res) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Admin only' });
   const { username, password, role } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+  const assignedRole = VALID_ROLES.includes(role) ? role : 'staff';
   try {
     const hash = bcrypt.hashSync(password, 10);
-    db.prepare('INSERT INTO users (username, password, role) VALUES (?, ?, ?)').run(username, hash, role || 'staff');
+    db.prepare('INSERT INTO users (username, password, role) VALUES (?, ?, ?)').run(username, hash, assignedRole);
     res.json({ ok: true });
   } catch (err) {
     res.status(400).json({ error: 'Username already exists' });
   }
 });
 
+app.patch('/api/users/:id', auth, (req, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Admin only' });
+  const { username, password, role } = req.body;
+  const userId = parseInt(req.params.id);
+  try {
+    if (username) {
+      db.prepare('UPDATE users SET username = ? WHERE id = ?').run(username, userId);
+    }
+    if (password) {
+      const hash = bcrypt.hashSync(password, 10);
+      db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hash, userId);
+    }
+    if (role && VALID_ROLES.includes(role)) {
+      // Prevent demoting yourself away from superadmin if you're the last one
+      if (userId === req.user.id && req.user.role === 'superadmin' && role !== 'superadmin') {
+        const count = db.prepare("SELECT COUNT(*) as n FROM users WHERE role = 'superadmin'").get().n;
+        if (count <= 1) return res.status(400).json({ error: 'Cannot remove last superadmin' });
+      }
+      db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, userId);
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.delete('/api/users/:id', auth, (req, res) => {
-  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Admin only' });
   if (parseInt(req.params.id) === req.user.id) return res.status(400).json({ error: 'Cannot delete yourself' });
   db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
@@ -306,7 +344,7 @@ app.get('/api/files/:id/download', auth, (req, res) => {
 // Delete file (admin only)
 app.delete('/api/files/:id', auth, (req, res) => {
   try {
-    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    if (!isManagerOrAbove(req)) return res.status(403).json({ error: 'Manager or above only' });
     const file = db.prepare('SELECT * FROM files WHERE id = ?').get(req.params.id);
     if (!file) return res.status(404).json({ error: 'File not found' });
     const filePath = path.join(UPLOAD_DIR, file.filename);
@@ -323,7 +361,7 @@ const userCount = db.prepare('SELECT COUNT(*) as n FROM users').get().n;
 if (userCount === 0) {
   const defaultPass = 'spiral2026';
   const hash = bcrypt.hashSync(defaultPass, 10);
-  db.prepare('INSERT INTO users (username, password, role) VALUES (?, ?, ?)').run('admin', hash, 'admin');
+  db.prepare('INSERT INTO users (username, password, role) VALUES (?, ?, ?)').run('admin', hash, 'superadmin');
   console.log('');
   console.log('╔══════════════════════════════════════════╗');
   console.log('║  FIRST RUN - Default admin account:      ║');

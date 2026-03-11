@@ -619,6 +619,7 @@ let newD={name:'',emoji:'📋',color:'#3A7BD5'},newStaff='',importTxt='',toastMs
 let newSU={name:'',pn:'',dob:'',pc:'',ph:'',cn:'',cm:'',co:''};
 let editingSUFields=null;
 let incidents=[],incidentForm=null,viewingIncident=null,incidentFilter='all',currentUser=null;
+let usersList=[],usersLoading=false,newUserForm=null,editingUserId=null,editingUserPw=null;
 const INC_TYPES={behaviour:'🤜 Behaviour',medical:'🏥 Medical',fall:'🤕 Fall / Injury','near-miss':'⚠️ Near Miss',property:'🏠 Property Damage',safeguarding:'🛡️ Safeguarding',transport:'🚐 Transport',other:'📋 Other'};
 const INC_SEV={low:{label:'Low',color:'#22C55E',bg:'#F0FDF4'},medium:{label:'Medium',color:'#D97706',bg:'#FEF3C7'},high:{label:'High',color:'#DC2626',bg:'#FEF2F2'}};
 let filterPri='all',filterStaff='all',msForm=null;
@@ -1176,6 +1177,49 @@ await fetch(syncCfg.url,{method:'POST',mode:'no-cors',headers:{'Content-Type':'t
 showToast('Incidents pushed ✓');
 }catch{showToast('Push failed')}
 }
+// ====== USER MANAGEMENT ======
+const ROLE_LABELS={superadmin:'Superadmin',manager:'Manager',staff:'Staff',driver:'Driver',serviceuser:'Service User',carer:'Carer'};
+const ROLE_COLORS={superadmin:'#7C3AED',manager:'#2563EB',staff:'#059669',driver:'#D97706',serviceuser:'#DB2777',carer:'#0891B2'};
+function isSuperAdmin(){return currentUser&&(currentUser.role==='superadmin'||currentUser.role==='admin')}
+function isManagerOrAbove(){return currentUser&&['superadmin','admin','manager'].includes(currentUser.role)}
+function canSeeTab(tab){
+  const r=currentUser?.role||'staff';
+  if(tab==='usersTab') return isSuperAdmin();
+  if(['staffTab','rotaTab','dash','hist','incidentsTab'].includes(tab)) return isManagerOrAbove();
+  return true;
+}
+async function loadUsers(){
+  usersLoading=true;render();
+  try{const r=await fetch('/api/users',{credentials:'include'});const d=await r.json();usersList=d.users||[];}catch{}
+  usersLoading=false;render();
+}
+async function createUser(){
+  if(!newUserForm||!newUserForm.username||!newUserForm.password)return;
+  const r=await fetch('/api/users',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(newUserForm)});
+  const d=await r.json();
+  if(d.ok){newUserForm=null;showToast('User created');loadUsers();}
+  else showToast('Error: '+d.error);
+}
+async function deleteUser(id){
+  if(!confirm('Delete this user?'))return;
+  const r=await fetch('/api/users/'+id,{method:'DELETE',credentials:'include'});
+  const d=await r.json();
+  if(d.ok){showToast('Deleted');loadUsers();}
+  else showToast('Error: '+d.error);
+}
+async function saveEditUser(){
+  if(!editingUserId)return;
+  const body={};
+  if(editingUserPw&&editingUserPw.pw)body.password=editingUserPw.pw;
+  const roleEl=document.getElementById('eu-role-'+editingUserId);
+  if(roleEl)body.role=roleEl.value;
+  const unEl=document.getElementById('eu-un-'+editingUserId);
+  if(unEl)body.username=unEl.value;
+  const r=await fetch('/api/users/'+editingUserId,{method:'PATCH',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d=await r.json();
+  if(d.ok){editingUserId=null;editingUserPw=null;showToast('Updated');loadUsers();}
+  else showToast('Error: '+d.error);
+}
 function addSU(){if(!newSU.name.trim())return;const su={id:uid(),name:newSU.name.trim(),flags:[],days:[]};if(newSU.pn.trim())su.pn=newSU.pn.trim();if(newSU.dob)su.dob=newSU.dob;if(newSU.pc.trim())su.pc=newSU.pc.trim();if(newSU.ph.trim())su.ph=newSU.ph.trim();if(newSU.cn.trim())su.cn=newSU.cn.trim();if(newSU.cm.trim())su.cm=newSU.cm.trim();if(newSU.co.trim())su.co=newSU.co.trim();serviceUsers.push(su);newSU={name:'',pn:'',dob:'',pc:'',ph:'',cn:'',cm:'',co:''};activeModal=null;save();render();showToast('Service user added')}
 function deleteSU(id){const su=serviceUsers.find(u=>u.id===id);if(!su)return;if(!confirm('Delete '+su.name+'?'))return;serviceUsers=serviceUsers.filter(u=>u.id!==id);save();render();showToast('Deleted')}
 function moveUp(id){const i=D.findIndex(d=>d.id===id);if(i>0){[D[i-1],D[i]]=[D[i],D[i-1]];save();render()}}
@@ -1257,7 +1301,7 @@ const allTotal=D.reduce((a,d)=>a+d.tasks.length,0);
 const overall=pct(allDone,allTotal);
 
 // HEADER
-h+=`<div class="hdr"><div class="hdr-top"><div class="hdr-brand"><h1>${appMode==='foss'?'🤝 FOSS':'🌀 Spiral Sussex'}</h1><small>${appMode==='foss'?'Friends of Spiral Sussex':'Tracker'}</small></div><div class="hdr-actions"><button class="hdr-btn" style="${appMode==='foss'?'background:#10B981;color:white':'background:#6366F1;color:white'};font-size:10px;font-weight:700;width:auto;padding:0 10px;border-radius:8px" onclick="switchMode(appMode==='spiral'?'foss':'spiral')">${appMode==='foss'?'SPIRAL':'FOSS'}</button><button class="hdr-btn" onclick="activeModal='staff';render()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></button><button class="hdr-btn" onclick="activeModal='sync';render()">🔄</button><button class="hdr-btn" onclick="activeModal='sheets';render()">📤</button><button class="hdr-btn" onclick="document.getElementById('print-date').textContent=new Date().toLocaleDateString('en-GB',{weekday:'long',year:'numeric',month:'long',day:'numeric'});window.print()">🖨</button></div></div>`;
+h+=`<div class="hdr"><div class="hdr-top"><div class="hdr-brand"><h1>${appMode==='foss'?'🤝 FOSS':'🌀 Spiral Sussex'}</h1><small>${currentUser?`${esc(currentUser.username)} · <span style="color:${ROLE_COLORS[currentUser.role]||'#9CA3AF'}">${ROLE_LABELS[currentUser.role]||currentUser.role}</span>`:appMode==='foss'?'Friends of Spiral Sussex':'Tracker'}</small></div><div class="hdr-actions"><button class="hdr-btn" style="${appMode==='foss'?'background:#10B981;color:white':'background:#6366F1;color:white'};font-size:10px;font-weight:700;width:auto;padding:0 10px;border-radius:8px" onclick="switchMode(appMode==='spiral'?'foss':'spiral')">${appMode==='foss'?'SPIRAL':'FOSS'}</button><button class="hdr-btn" onclick="activeModal='staff';render()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></button><button class="hdr-btn" onclick="activeModal='sync';render()">🔄</button><button class="hdr-btn" onclick="activeModal='sheets';render()">📤</button><button class="hdr-btn" onclick="document.getElementById('print-date').textContent=new Date().toLocaleDateString('en-GB',{weekday:'long',year:'numeric',month:'long',day:'numeric'});window.print()">🖨</button></div></div>`;
 
 // Sync bar
 const sc=syncStatus;const hasUrl=!!syncCfg.url;
@@ -1268,7 +1312,7 @@ if(appMode==='spiral'&&view==='depts'){h+=`<div class="ov-box"><div class="ov-ro
 
 // Tabs
 if(appMode==='spiral'){
-h+=`<div class="tabs" role="tablist" aria-label="Main navigation"><button class="tab ${view==='depts'?'on':''}" role="tab" aria-selected="${view==='depts'}" onclick="view='depts';render()">📋 Tasks</button><button class="tab ${view==='sched'?'on':''}" role="tab" aria-selected="${view==='sched'}" onclick="view='sched';render()">📅 Schedule</button><button class="tab ${view==='regTab'?'on':''}" role="tab" aria-selected="${view==='regTab'}" onclick="view='regTab';render()">📝 Register</button><button class="tab ${view==='sus'?'on':''}" role="tab" aria-selected="${view==='sus'}" onclick="view='sus';render()">👤 SUs</button><button class="tab ${view==='staffTab'?'on':''}" role="tab" aria-selected="${view==='staffTab'}" onclick="view='staffTab';render()">🧑‍💼 Staff</button><button class="tab ${view==='rotaTab'?'on':''}" role="tab" aria-selected="${view==='rotaTab'}" onclick="view='rotaTab';render()">📊 Rota</button><button class="tab ${view==='dash'?'on':''}" role="tab" aria-selected="${view==='dash'}" onclick="view='dash';render()">📈 Dashboard</button><button class="tab ${view==='calTab'?'on':''}" role="tab" aria-selected="${view==='calTab'}" onclick="view='calTab';render()">📆 Calendar</button><button class="tab ${view==='filesTab'?'on':''}" role="tab" aria-selected="${view==='filesTab'}" onclick="view='filesTab';loadFiles('spiral');render()">📁 Files</button><button class="tab ${view==='hist'?'on':''}" role="tab" aria-selected="${view==='hist'}" onclick="view='hist';render()">🕐 History</button><button class="tab ${view==='incidentsTab'?'on':''}" role="tab" aria-selected="${view==='incidentsTab'}" onclick="view='incidentsTab';render()">🚨 Incidents${incidents.filter(i=>i.status==='open').length?` <span style="background:#EF4444;color:white;border-radius:100px;padding:1px 5px;font-size:9px">${incidents.filter(i=>i.status==='open').length}</span>`:''}</button></div></div>`;
+h+=`<div class="tabs" role="tablist" aria-label="Main navigation"><button class="tab ${view==='depts'?'on':''}" role="tab" aria-selected="${view==='depts'}" onclick="view='depts';render()">📋 Tasks</button><button class="tab ${view==='sched'?'on':''}" role="tab" aria-selected="${view==='sched'}" onclick="view='sched';render()">📅 Schedule</button><button class="tab ${view==='regTab'?'on':''}" role="tab" aria-selected="${view==='regTab'}" onclick="view='regTab';render()">📝 Register</button><button class="tab ${view==='sus'?'on':''}" role="tab" aria-selected="${view==='sus'}" onclick="view='sus';render()">👤 SUs</button>${canSeeTab('staffTab')?`<button class="tab ${view==='staffTab'?'on':''}" role="tab" aria-selected="${view==='staffTab'}" onclick="view='staffTab';render()">🧑‍💼 Staff</button>`:''}${canSeeTab('rotaTab')?`<button class="tab ${view==='rotaTab'?'on':''}" role="tab" aria-selected="${view==='rotaTab'}" onclick="view='rotaTab';render()">📊 Rota</button>`:''}${canSeeTab('dash')?`<button class="tab ${view==='dash'?'on':''}" role="tab" aria-selected="${view==='dash'}" onclick="view='dash';render()">📈 Dashboard</button>`:''}<button class="tab ${view==='calTab'?'on':''}" role="tab" aria-selected="${view==='calTab'}" onclick="view='calTab';render()">📆 Calendar</button><button class="tab ${view==='filesTab'?'on':''}" role="tab" aria-selected="${view==='filesTab'}" onclick="view='filesTab';loadFiles('spiral');render()">📁 Files</button>${canSeeTab('hist')?`<button class="tab ${view==='hist'?'on':''}" role="tab" aria-selected="${view==='hist'}" onclick="view='hist';render()">🕐 History</button>`:''}${canSeeTab('incidentsTab')?`<button class="tab ${view==='incidentsTab'?'on':''}" role="tab" aria-selected="${view==='incidentsTab'}" onclick="view='incidentsTab';render()">🚨 Incidents${incidents.filter(i=>i.status==='open').length?` <span style="background:#EF4444;color:white;border-radius:100px;padding:1px 5px;font-size:9px">${incidents.filter(i=>i.status==='open').length}</span>`:''}</button>`:''}`+`${canSeeTab('usersTab')?`<button class="tab ${view==='usersTab'?'on':''}" role="tab" aria-selected="${view==='usersTab'}" onclick="view='usersTab';if(!usersList.length)loadUsers();render()">👥 Users</button>`:''}</div></div>`;
 } else {
 h+=`<div class="tabs" role="tablist" aria-label="Main navigation"><button class="tab ${fossView==='fossTasks'?'on':''}" role="tab" aria-selected="${fossView==='fossTasks'}" onclick="fossView='fossTasks';render()">📋 Tasks</button><button class="tab ${fossView==='fossStaff'?'on':''}" role="tab" aria-selected="${fossView==='fossStaff'}" onclick="fossView='fossStaff';render()">🧑‍💼 Team</button><button class="tab ${fossView==='fossContacts'?'on':''}" role="tab" aria-selected="${fossView==='fossContacts'}" onclick="fossView='fossContacts';render()">📇 Contacts</button><button class="tab ${fossView==='fossSUs'?'on':''}" role="tab" aria-selected="${fossView==='fossSUs'}" onclick="fossView='fossSUs';render()">👤 SUs</button><button class="tab ${fossView==='fossLog'?'on':''}" role="tab" aria-selected="${fossView==='fossLog'}" onclick="fossView='fossLog';render()">✅ Log</button><button class="tab ${fossView==='fossFiles'?'on':''}" role="tab" aria-selected="${fossView==='fossFiles'}" onclick="fossView='fossFiles';loadFiles('foss');render()">📁 Files</button><button class="tab ${fossView==='fossCal'?'on':''}" role="tab" aria-selected="${fossView==='fossCal'}" onclick="fossView='fossCal';render()">📆 Calendar</button></div></div>`;
 }
@@ -2012,6 +2056,48 @@ h+=`</div></div></div>`;
 });
 h+=`<button onclick="incidentForm=newIncidentObj();render()" style="width:100%;border:2px dashed #D1D5DB;border-radius:14px;padding:14px;font-size:14px;font-weight:700;color:#6B7280;cursor:pointer;background:none;margin-top:4px">🚨 New Incident Report</button>`;
 h+=`</div>`;}
+
+// ===== USERS TAB =====
+if(view==='usersTab'&&isSuperAdmin()){
+const ROLE_OPTS=['superadmin','manager','staff','driver','serviceuser','carer'];
+h+=`<div style="padding:16px;max-width:700px;margin:0 auto">`;
+h+=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px"><h2 style="margin:0;font-size:18px;font-weight:700;color:#1F2937">👥 User Management</h2><button onclick="newUserForm={username:'',password:'',role:'staff'};render()" style="background:#6366F1;color:white;border:none;border-radius:10px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">+ New User</button></div>`;
+if(usersLoading){h+=`<p style="color:#9CA3AF;text-align:center">Loading...</p>`;}
+else{
+h+=`<div style="display:flex;flex-direction:column;gap:10px">`;
+usersList.forEach(u=>{
+const isEditing=editingUserId===u.id;
+const roleColor=ROLE_COLORS[u.role]||'#6B7280';
+h+=`<div style="background:white;border-radius:14px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,0.07)">`;
+if(isEditing){
+h+=`<div style="display:flex;flex-direction:column;gap:8px">`;
+h+=`<div style="display:flex;gap:8px;align-items:center"><label style="font-size:11px;font-weight:700;color:#6B7280;width:80px">Username</label><input id="eu-un-${u.id}" value="${esc(u.username)}" style="flex:1;border:1px solid #D1D5DB;border-radius:8px;padding:6px 10px;font-size:13px"></div>`;
+h+=`<div style="display:flex;gap:8px;align-items:center"><label style="font-size:11px;font-weight:700;color:#6B7280;width:80px">Role</label><select id="eu-role-${u.id}" style="flex:1;border:1px solid #D1D5DB;border-radius:8px;padding:6px 10px;font-size:13px">${ROLE_OPTS.map(r=>`<option value="${r}" ${u.role===r?'selected':''}>${ROLE_LABELS[r]||r}</option>`).join('')}</select></div>`;
+h+=`<div style="display:flex;gap:8px;align-items:center"><label style="font-size:11px;font-weight:700;color:#6B7280;width:80px">New PW</label><input type="password" placeholder="Leave blank to keep" oninput="if(!editingUserPw)editingUserPw={};editingUserPw.pw=this.value" style="flex:1;border:1px solid #D1D5DB;border-radius:8px;padding:6px 10px;font-size:13px"></div>`;
+h+=`<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px"><button onclick="editingUserId=null;editingUserPw=null;render()" style="border:1px solid #D1D5DB;background:white;border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer">Cancel</button><button onclick="saveEditUser()" style="background:#6366F1;color:white;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">Save</button></div>`;
+h+=`</div>`;
+}else{
+h+=`<div style="display:flex;align-items:center;gap:10px"><div style="flex:1"><div style="font-size:14px;font-weight:700;color:#1F2937">${esc(u.username)}</div><div style="font-size:11px;color:#9CA3AF;margin-top:2px">Added ${u.created_at?u.created_at.split('T')[0]:''}</div></div><span style="background:${roleColor}22;color:${roleColor};border-radius:100px;padding:3px 10px;font-size:11px;font-weight:700">${ROLE_LABELS[u.role]||u.role}</span><button onclick="editingUserId=${u.id};editingUserPw=null;render()" style="border:1px solid #D1D5DB;background:white;border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer">Edit</button>${u.id!==currentUser?.id?`<button onclick="deleteUser(${u.id})" style="background:#FEE2E2;color:#DC2626;border:none;border-radius:8px;padding:5px 10px;font-size:12px;cursor:pointer">Delete</button>`:'<span style="font-size:10px;color:#9CA3AF;padding:5px">(you)</span>'}</div>`;
+}
+h+=`</div>`;
+});
+h+=`</div>`;
+if(!usersList.length)h+=`<p style="color:#9CA3AF;text-align:center;padding:40px">No users found. <button onclick="loadUsers()" style="background:none;border:none;color:#6366F1;cursor:pointer;font-size:14px">Refresh</button></p>`;
+}
+// New user form
+if(newUserForm){
+const nf=newUserForm;
+h+=`<div style="position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:200;display:flex;align-items:flex-end" onclick="if(event.target===this){newUserForm=null;render()}"><div style="background:white;border-radius:20px 20px 0 0;padding:24px;width:100%;max-width:500px;margin:0 auto">`;
+h+=`<h3 style="margin:0 0 16px;font-size:17px;font-weight:700">Create New User</h3>`;
+h+=`<div style="display:flex;flex-direction:column;gap:12px">`;
+h+=`<div><label style="font-size:11px;font-weight:700;color:#6B7280;display:block;margin-bottom:4px">Username</label><input value="${esc(nf.username)}" oninput="newUserForm.username=this.value" style="width:100%;box-sizing:border-box;border:1px solid #D1D5DB;border-radius:8px;padding:8px 12px;font-size:14px"></div>`;
+h+=`<div><label style="font-size:11px;font-weight:700;color:#6B7280;display:block;margin-bottom:4px">Password</label><input type="password" value="${esc(nf.password)}" oninput="newUserForm.password=this.value" style="width:100%;box-sizing:border-box;border:1px solid #D1D5DB;border-radius:8px;padding:8px 12px;font-size:14px"></div>`;
+h+=`<div><label style="font-size:11px;font-weight:700;color:#6B7280;display:block;margin-bottom:4px">Role</label><select onchange="newUserForm.role=this.value" style="width:100%;box-sizing:border-box;border:1px solid #D1D5DB;border-radius:8px;padding:8px 12px;font-size:14px">${ROLE_OPTS.map(r=>`<option value="${r}" ${nf.role===r?'selected':''}>${ROLE_LABELS[r]||r}</option>`).join('')}</select></div>`;
+h+=`<div style="display:flex;gap:8px;margin-top:4px"><button onclick="newUserForm=null;render()" style="flex:1;border:1px solid #D1D5DB;background:white;border-radius:10px;padding:10px;font-size:14px;cursor:pointer">Cancel</button><button onclick="createUser()" style="flex:1;background:#6366F1;color:white;border:none;border-radius:10px;padding:10px;font-size:14px;font-weight:700;cursor:pointer">Create</button></div>`;
+h+=`</div></div></div>`;
+}
+h+=`</div>`;
+}
 
 } // end if(appMode==='spiral')
 
