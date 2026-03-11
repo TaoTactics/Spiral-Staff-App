@@ -618,6 +618,9 @@ let fossView='fossTasks',fossOpenD={},fossAddingTo=null,fossEditingT=null,fossNo
 let newD={name:'',emoji:'📋',color:'#3A7BD5'},newStaff='',importTxt='',toastMsg='',toastTmr=null;
 let newSU={name:'',pn:'',dob:'',pc:'',ph:'',cn:'',cm:'',co:''};
 let editingSUFields=null;
+let incidents=[],incidentForm=null,viewingIncident=null,incidentFilter='all',currentUser=null;
+const INC_TYPES={behaviour:'🤜 Behaviour',medical:'🏥 Medical',fall:'🤕 Fall / Injury','near-miss':'⚠️ Near Miss',property:'🏠 Property Damage',safeguarding:'🛡️ Safeguarding',transport:'🚐 Transport',other:'📋 Other'};
+const INC_SEV={low:{label:'Low',color:'#22C55E',bg:'#F0FDF4'},medium:{label:'Medium',color:'#D97706',bg:'#FEF3C7'},high:{label:'High',color:'#DC2626',bg:'#FEF2F2'}};
 let filterPri='all',filterStaff='all',msForm=null;
 let syncCfg={url:'',autoSync:false,lastSync:null},syncStatus='disconnected',syncDebounce=null;
 let openDays={mon:true,tue:true,wed:true,thu:true,fri:true};
@@ -852,7 +855,7 @@ return s;
 let serverMode=false; // true if running on server
 let saveDebounce=null;
 
-function getDataObj(){return {departments:D,staff,history,schedule,serviceUsers,staffProfiles,rota,driverRota,weekSchedules,registers,fossData}}
+function getDataObj(){return {departments:D,staff,history,schedule,serviceUsers,staffProfiles,rota,driverRota,weekSchedules,registers,fossData,incidents}}
 
 function load(){
 // Detect if we're on the server (not file:// or github.io)
@@ -904,6 +907,7 @@ driverRota=d.driverRota||{};
 weekSchedules=d.weekSchedules||{};
 registers=d.registers||{};
 fossData=d.fossData||{departments:[],staffProfiles:[],contacts:[],completedLog:[]};
+incidents=d.incidents||[];
 staff=staffProfiles.map(p=>p.name);
 }
 
@@ -961,6 +965,8 @@ function saveSyncCfg(){try{localStorage.setItem(SYNC_KEY,JSON.stringify(syncCfg)
 const APPS_SCRIPT_CODE=`function doPost(e){var d=JSON.parse(e.postData.contents);var ss=SpreadsheetApp.getActiveSpreadsheet();var sh=ss.getSheetByName('SpiralData')||ss.insertSheet('SpiralData');sh.clear();sh.getRange(1,1).setValue(JSON.stringify(d));sh.getRange(1,2).setValue(new Date().toISOString());
 // SU sheet sync - comprehensive fields
 if(d.serviceUsers){var su=ss.getSheetByName('ServiceUsers')||ss.insertSheet('ServiceUsers');su.clear();var hdr=['ID','Name','Flags','DOB','Postcode','Phone','Email','Carer Name','Carer Mobile','Carer Org','Emergency Contact','Emergency Phone','Medical Conditions','Behaviour','Dietary','Allergies','Medication Admin','GP','Surgery','Preferred Name','Communication'];su.getRange(1,1,1,hdr.length).setValues([hdr]);su.getRange(1,1,1,hdr.length).setFontWeight('bold');d.serviceUsers.forEach(function(s,i){su.getRange(i+2,1,1,hdr.length).setValues([[s.id,s.name,(s.flags||[]).join(','),s.dob||'',s.pc||'',s.ph||'',s.em||'',s.cn||'',s.cm||'',s.co||'',s.ec1||'',s.ep1||'',s.med||'',s.beh||'',s.diet||'',s.allg||'',s.ma||'',s.gp||'',s.surg||'',s.pn||'',s.comm||'']]);});}
+// Incidents sheet
+if(d.incidents||d._action==='incidents'){var inc=ss.getSheetByName('Incidents')||ss.insertSheet('Incidents');inc.clear();var ih=['ID','Date','Time','Type','Severity','Status','SUs Involved','Staff Involved','Location','Description','Action Taken','Reported To','Follow-Up','External Report','External Body','Created By','Created At'];inc.getRange(1,1,1,ih.length).setValues([ih]);inc.getRange(1,1,1,ih.length).setFontWeight('bold');(d.incidents||[]).forEach(function(i,n){inc.getRange(n+2,1,1,ih.length).setValues([[i.id,i.date||'',i.time||'',i.type||'',i.severity||'',i.status||'open',(i.suNames||[]).join(', '),(i.staffInvolved||[]).join(', '),i.location||'',i.description||'',i.actionTaken||'',i.reportedTo||'',i.followUp||'',i.externalReport?'Yes':'No',i.externalBody||'',i.createdBy||'',i.createdAt||'']]);});}
 return ContentService.createTextOutput('ok');}
 function doGet(e){var ss=SpreadsheetApp.getActiveSpreadsheet();
 if(e.parameter.action==='getSUs'){var su=ss.getSheetByName('ServiceUsers');if(!su)return ContentService.createTextOutput('{}').setMimeType(ContentService.MimeType.JSON);var data=su.getDataRange().getValues();var hdr=data[0];var sus=[];for(var i=1;i<data.length;i++){if(data[i][1]){var s={id:data[i][0],name:data[i][1],flags:data[i][2]?data[i][2].split(','):[]};for(var j=3;j<hdr.length;j++){var key=['dob','pc','ph','em','cn','cm','co','ec1','ep1','med','beh','diet','allg','ma','gp','surg','pn','comm'][j-3];if(key&&data[i][j])s[key]=String(data[i][j]);}sus.push(s);}}return ContentService.createTextOutput(JSON.stringify({serviceUsers:sus})).setMimeType(ContentService.MimeType.JSON);}
@@ -1147,6 +1153,29 @@ function addTask(dId){const d=D.find(x=>x.id===dId);if(!d)return;const inp=docum
 function addNote(dId,tId){const inp=document.getElementById('note-inp-'+tId);const txt=inp?.value?.trim();if(!txt)return;const d=D.find(x=>x.id===dId);if(d){const t=d.tasks.find(x=>x.id===tId);if(t){if(!t.notes)t.notes=[];t.notes.push({text:txt,time:new Date().toISOString()})}}save();render()}
 function addDepartment(){if(!newD.name.trim())return;D.push({id:uid(),name:newD.name.trim(),emoji:newD.emoji,color:newD.color,rag:'none',milestones:[],tasks:[]});newD={name:'',emoji:'📋',color:'#3A7BD5'};activeModal=null;save();render();showToast('Added')}
 function deleteDept(id){if(!confirm('Delete?'))return;D=D.filter(d=>d.id!==id);save();render()}
+function newIncidentObj(){
+const now=new Date();
+const t=now.toTimeString().slice(0,5);
+return {date:today(),time:t,location:'',type:'behaviour',severity:'medium',suIds:[],suNames:[],staffInvolved:[...staff],witnesses:'',description:'',actionTaken:'',reportedTo:'',followUp:'',externalReport:false,externalBody:'',createdBy:currentUser?.username||'',status:'open'};
+}
+function saveIncident(){
+if(!incidentForm||!incidentForm.description.trim())return;
+const inc=Object.assign({},incidentForm,{id:uid(),createdAt:new Date().toISOString()});
+incidents.unshift(inc);incidentForm=null;save();render();showToast('Incident saved');
+if(syncCfg.url)pushIncidentsToSheet();
+}
+function deleteIncident(id){if(!confirm('Delete this incident report?'))return;incidents=incidents.filter(i=>i.id!==id);viewingIncident=null;save();render();showToast('Deleted')}
+function toggleIncidentStatus(id){const inc=incidents.find(i=>i.id===id);if(!inc)return;inc.status=inc.status==='open'?'closed':'open';save();render()}
+function toggleIncidentSU(id,name){if(!incidentForm)return;const idx=incidentForm.suIds.indexOf(id);if(idx>=0){incidentForm.suIds.splice(idx,1);incidentForm.suNames=incidentForm.suNames.filter(n=>n!==name);}else{incidentForm.suIds.push(id);incidentForm.suNames.push(name);}render()}
+function toggleIncidentStaff(name){if(!incidentForm)return;const idx=incidentForm.staffInvolved.indexOf(name);if(idx>=0)incidentForm.staffInvolved.splice(idx,1);else incidentForm.staffInvolved.push(name);render()}
+function incF(f,v){if(incidentForm)incidentForm[f]=v}
+async function pushIncidentsToSheet(){
+if(!syncCfg.url||!incidents.length)return;
+try{
+await fetch(syncCfg.url,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify({_action:'incidents',incidents})});
+showToast('Incidents pushed ✓');
+}catch{showToast('Push failed')}
+}
 function addSU(){if(!newSU.name.trim())return;const su={id:uid(),name:newSU.name.trim(),flags:[],days:[]};if(newSU.pn.trim())su.pn=newSU.pn.trim();if(newSU.dob)su.dob=newSU.dob;if(newSU.pc.trim())su.pc=newSU.pc.trim();if(newSU.ph.trim())su.ph=newSU.ph.trim();if(newSU.cn.trim())su.cn=newSU.cn.trim();if(newSU.cm.trim())su.cm=newSU.cm.trim();if(newSU.co.trim())su.co=newSU.co.trim();serviceUsers.push(su);newSU={name:'',pn:'',dob:'',pc:'',ph:'',cn:'',cm:'',co:''};activeModal=null;save();render();showToast('Service user added')}
 function deleteSU(id){const su=serviceUsers.find(u=>u.id===id);if(!su)return;if(!confirm('Delete '+su.name+'?'))return;serviceUsers=serviceUsers.filter(u=>u.id!==id);save();render();showToast('Deleted')}
 function moveUp(id){const i=D.findIndex(d=>d.id===id);if(i>0){[D[i-1],D[i]]=[D[i],D[i-1]];save();render()}}
@@ -1239,7 +1268,7 @@ if(appMode==='spiral'&&view==='depts'){h+=`<div class="ov-box"><div class="ov-ro
 
 // Tabs
 if(appMode==='spiral'){
-h+=`<div class="tabs" role="tablist" aria-label="Main navigation"><button class="tab ${view==='depts'?'on':''}" role="tab" aria-selected="${view==='depts'}" onclick="view='depts';render()">📋 Tasks</button><button class="tab ${view==='sched'?'on':''}" role="tab" aria-selected="${view==='sched'}" onclick="view='sched';render()">📅 Schedule</button><button class="tab ${view==='regTab'?'on':''}" role="tab" aria-selected="${view==='regTab'}" onclick="view='regTab';render()">📝 Register</button><button class="tab ${view==='sus'?'on':''}" role="tab" aria-selected="${view==='sus'}" onclick="view='sus';render()">👤 SUs</button><button class="tab ${view==='staffTab'?'on':''}" role="tab" aria-selected="${view==='staffTab'}" onclick="view='staffTab';render()">🧑‍💼 Staff</button><button class="tab ${view==='rotaTab'?'on':''}" role="tab" aria-selected="${view==='rotaTab'}" onclick="view='rotaTab';render()">📊 Rota</button><button class="tab ${view==='dash'?'on':''}" role="tab" aria-selected="${view==='dash'}" onclick="view='dash';render()">📈 Dashboard</button><button class="tab ${view==='calTab'?'on':''}" role="tab" aria-selected="${view==='calTab'}" onclick="view='calTab';render()">📆 Calendar</button><button class="tab ${view==='filesTab'?'on':''}" role="tab" aria-selected="${view==='filesTab'}" onclick="view='filesTab';loadFiles('spiral');render()">📁 Files</button><button class="tab ${view==='hist'?'on':''}" role="tab" aria-selected="${view==='hist'}" onclick="view='hist';render()">🕐 History</button></div></div>`;
+h+=`<div class="tabs" role="tablist" aria-label="Main navigation"><button class="tab ${view==='depts'?'on':''}" role="tab" aria-selected="${view==='depts'}" onclick="view='depts';render()">📋 Tasks</button><button class="tab ${view==='sched'?'on':''}" role="tab" aria-selected="${view==='sched'}" onclick="view='sched';render()">📅 Schedule</button><button class="tab ${view==='regTab'?'on':''}" role="tab" aria-selected="${view==='regTab'}" onclick="view='regTab';render()">📝 Register</button><button class="tab ${view==='sus'?'on':''}" role="tab" aria-selected="${view==='sus'}" onclick="view='sus';render()">👤 SUs</button><button class="tab ${view==='staffTab'?'on':''}" role="tab" aria-selected="${view==='staffTab'}" onclick="view='staffTab';render()">🧑‍💼 Staff</button><button class="tab ${view==='rotaTab'?'on':''}" role="tab" aria-selected="${view==='rotaTab'}" onclick="view='rotaTab';render()">📊 Rota</button><button class="tab ${view==='dash'?'on':''}" role="tab" aria-selected="${view==='dash'}" onclick="view='dash';render()">📈 Dashboard</button><button class="tab ${view==='calTab'?'on':''}" role="tab" aria-selected="${view==='calTab'}" onclick="view='calTab';render()">📆 Calendar</button><button class="tab ${view==='filesTab'?'on':''}" role="tab" aria-selected="${view==='filesTab'}" onclick="view='filesTab';loadFiles('spiral');render()">📁 Files</button><button class="tab ${view==='hist'?'on':''}" role="tab" aria-selected="${view==='hist'}" onclick="view='hist';render()">🕐 History</button><button class="tab ${view==='incidentsTab'?'on':''}" role="tab" aria-selected="${view==='incidentsTab'}" onclick="view='incidentsTab';render()">🚨 Incidents${incidents.filter(i=>i.status==='open').length?` <span style="background:#EF4444;color:white;border-radius:100px;padding:1px 5px;font-size:9px">${incidents.filter(i=>i.status==='open').length}</span>`:''}</button></div></div>`;
 } else {
 h+=`<div class="tabs" role="tablist" aria-label="Main navigation"><button class="tab ${fossView==='fossTasks'?'on':''}" role="tab" aria-selected="${fossView==='fossTasks'}" onclick="fossView='fossTasks';render()">📋 Tasks</button><button class="tab ${fossView==='fossStaff'?'on':''}" role="tab" aria-selected="${fossView==='fossStaff'}" onclick="fossView='fossStaff';render()">🧑‍💼 Team</button><button class="tab ${fossView==='fossContacts'?'on':''}" role="tab" aria-selected="${fossView==='fossContacts'}" onclick="fossView='fossContacts';render()">📇 Contacts</button><button class="tab ${fossView==='fossSUs'?'on':''}" role="tab" aria-selected="${fossView==='fossSUs'}" onclick="fossView='fossSUs';render()">👤 SUs</button><button class="tab ${fossView==='fossLog'?'on':''}" role="tab" aria-selected="${fossView==='fossLog'}" onclick="fossView='fossLog';render()">✅ Log</button><button class="tab ${fossView==='fossFiles'?'on':''}" role="tab" aria-selected="${fossView==='fossFiles'}" onclick="fossView='fossFiles';loadFiles('foss');render()">📁 Files</button><button class="tab ${fossView==='fossCal'?'on':''}" role="tab" aria-selected="${fossView==='fossCal'}" onclick="fossView='fossCal';render()">📆 Calendar</button></div></div>`;
 }
@@ -1935,6 +1964,55 @@ if(history.length>=2){h+=`<div class="dash-card"><div style="font-size:13px;font
 [...history].reverse().forEach((snap,i)=>{h+=`<div class="hist-card"><div class="hist-date">${new Date(snap.date).toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'long'})} — ${snap.overall}%</div>`;(snap.depts||[]).forEach(d=>{const rc=d.rag==='red'?'#EF4444':d.rag==='amber'?'#F59E0B':d.rag==='green'?'#22C55E':'#D1D5DB';h+=`<div class="hist-bar"><span class="hist-bar-nm">${esc(d.name)}</span><span style="width:8px;height:8px;border-radius:100px;background:${rc};flex-shrink:0"></span><div class="hist-bar-track"><div class="hist-bar-fill" style="width:${d.pct}%;background:${d.color}"></div></div><span class="hist-bar-pct">${d.pct}%</span></div>`});h+=`</div>`});
 h+=`<button onclick="if(confirm('Clear?')){history=[];save();render()}" style="width:100%;border:none;background:none;font-size:11px;color:#BCBAB5;padding:8px;cursor:pointer">Clear history</button>`}h+=`</div>`}
 
+// ===== INCIDENTS TAB =====
+if(view==='incidentsTab'){
+const sevOrder={high:0,medium:1,low:2};
+let filtered=[...incidents].sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+if(incidentFilter==='open')filtered=filtered.filter(i=>i.status==='open');
+else if(incidentFilter==='closed')filtered=filtered.filter(i=>i.status==='closed');
+else if(incidentFilter==='high')filtered=filtered.filter(i=>i.severity==='high');
+h+=`<div style="padding:12px 16px 100px">`;
+// Stats strip
+const openN=incidents.filter(i=>i.status==='open').length;
+const highN=incidents.filter(i=>i.severity==='high').length;
+h+=`<div style="display:flex;gap:8px;margin-bottom:12px">`;
+h+=`<div style="flex:1;background:white;border-radius:12px;padding:10px 12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:800;color:#1F2937">${incidents.length}</div><div style="font-size:10px;color:#6B7280;font-weight:600;text-transform:uppercase">Total</div></div>`;
+h+=`<div style="flex:1;background:white;border-radius:12px;padding:10px 12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:800;color:#D97706">${openN}</div><div style="font-size:10px;color:#6B7280;font-weight:600;text-transform:uppercase">Open</div></div>`;
+h+=`<div style="flex:1;background:white;border-radius:12px;padding:10px 12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:22px;font-weight:800;color:#DC2626">${highN}</div><div style="font-size:10px;color:#6B7280;font-weight:600;text-transform:uppercase">High Sev.</div></div>`;
+h+=`</div>`;
+// Filter bar
+h+=`<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">`;
+[['all','All'],['open','Open'],['closed','Closed'],['high','🔴 High']].forEach(([val,lbl])=>{
+h+=`<button onclick="incidentFilter='${val}';render()" style="border:none;border-radius:100px;padding:6px 14px;font-size:11px;font-weight:700;cursor:pointer;background:${incidentFilter===val?'#1F2937':'#E5E7EB'};color:${incidentFilter===val?'white':'#6B7280'}">${lbl}</button>`;
+});
+h+=`<button onclick="activeModal='pushIncidents';render()" style="border:none;border-radius:100px;padding:6px 14px;font-size:11px;font-weight:700;cursor:pointer;background:#EEF2FF;color:#6366F1;margin-left:auto">📤 Push to Sheets</button>`;
+h+=`</div>`;
+// Incident cards
+if(!filtered.length){h+=`<div style="text-align:center;padding:40px 16px;color:#9CA3AF"><div style="font-size:32px;margin-bottom:8px">🚨</div><div style="font-size:14px;font-weight:600">No incidents${incidentFilter!=='all'?' matching filter':''}</div></div>`;}
+filtered.forEach(inc=>{
+const sev=INC_SEV[inc.severity]||INC_SEV.medium;
+const typeLabel=INC_TYPES[inc.type]||inc.type;
+const suNames=(inc.suNames||[]).join(', ');
+h+=`<div onclick="viewingIncident='${inc.id}';render()" style="background:white;border-radius:14px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,0.07);overflow:hidden;cursor:pointer;border-left:4px solid ${sev.color}">`;
+h+=`<div style="padding:12px 14px">`;
+h+=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">`;
+h+=`<div style="display:flex;align-items:center;gap:6px">`;
+h+=`<span style="font-size:11px;font-weight:700;background:${sev.bg};color:${sev.color};padding:2px 8px;border-radius:100px">${sev.label}</span>`;
+h+=`<span style="font-size:11px;font-weight:600;background:#F3F4F6;color:#374151;padding:2px 8px;border-radius:100px">${typeLabel}</span>`;
+h+=`</div>`;
+h+=`<span style="font-size:10px;color:#9CA3AF;font-weight:600">${inc.date} ${inc.time||''}</span>`;
+h+=`</div>`;
+if(suNames)h+=`<div style="font-size:12px;font-weight:700;color:#1F2937;margin-bottom:3px">👤 ${esc(suNames)}</div>`;
+if(inc.location)h+=`<div style="font-size:11px;color:#6B7280;margin-bottom:3px">📍 ${esc(inc.location)}</div>`;
+h+=`<div style="font-size:12px;color:#374151;line-height:1.4">${esc((inc.description||'').slice(0,120))}${(inc.description||'').length>120?'…':''}</div>`;
+h+=`<div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">`;
+h+=`<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:100px;background:${inc.status==='open'?'#FEF3C7':'#F0FDF4'};color:${inc.status==='open'?'#D97706':'#16A34A'}">${inc.status==='open'?'Open':'Closed'}</span>`;
+h+=`<span style="font-size:10px;color:#9CA3AF">by ${esc(inc.createdBy||'?')} · tap to view</span>`;
+h+=`</div></div></div>`;
+});
+h+=`<button onclick="incidentForm=newIncidentObj();render()" style="width:100%;border:2px dashed #D1D5DB;border-radius:14px;padding:14px;font-size:14px;font-weight:700;color:#6B7280;cursor:pointer;background:none;margin-top:4px">🚨 New Incident Report</button>`;
+h+=`</div>`;}
+
 } // end if(appMode==='spiral')
 
 // ======== FOSS MODE VIEWS ========
@@ -2137,6 +2215,91 @@ h+=`<div style="margin-top:12px"><label class="mlbl">Web App URL</label><input c
 if(has){h+=`<div style="display:flex;gap:6px;margin-top:8px"><button class="mbtn green" style="flex:1" onclick="pushToSheet()">⬆️ Push</button><button class="mbtn outline" style="flex:1" onclick="pullFromSheet()">⬇️ Pull</button></div><button class="mbtn outline" style="margin-top:6px" onclick="pullSUsFromSheet()">↻ Refresh SU Data from Sheet</button><div style="display:flex;align-items:center;gap:8px;margin-top:10px;padding:10px;background:#F9FAFB;border-radius:10px"><span style="font-size:13px;flex:1;font-weight:500">Auto-sync</span><button onclick="syncCfg.autoSync=!syncCfg.autoSync;saveSyncCfg();render()" style="width:48px;height:28px;border-radius:100px;border:none;cursor:pointer;padding:2px;background:${syncCfg.autoSync?'#22C55E':'#D1D5DB'}"><div style="width:24px;height:24px;border-radius:100px;background:white;box-shadow:0 1px 3px rgba(0,0,0,0.2);transition:transform 0.2s;transform:translateX(${syncCfg.autoSync?'20px':'0'})"></div></button></div><button class="mbtn dashed" style="margin-top:8px" onclick="syncCfg={url:'',autoSync:false,lastSync:null};saveSyncCfg();syncStatus='disconnected';render()">Disconnect</button>`}
 h+=`</div></div>`}
 
+// Incident form modal
+if(incidentForm){
+const f=incidentForm;
+const inpI=(fld,ph,type)=>`<input style="width:100%;border:1px solid #E5E7EB;border-radius:10px;padding:10px 12px;font-size:13px;outline:none;font-family:inherit" type="${type||'text'}" value="${esc(f[fld]||'')}" placeholder="${ph||''}" oninput="incF('${fld}',this.value)">`;
+const taI=(fld,ph)=>`<textarea style="width:100%;border:1px solid #E5E7EB;border-radius:10px;padding:10px 12px;font-size:13px;outline:none;font-family:inherit;resize:vertical;min-height:72px" placeholder="${ph||''}" oninput="incF('${fld}',this.value)">${esc(f[fld]||'')}</textarea>`;
+h+=`<div class="mov" onclick="if(event.target===this){incidentForm=null;render()}"><div class="msh" onclick="event.stopPropagation()">
+<div class="mha"></div><div class="mti">🚨 New Incident Report</div>
+<div style="display:flex;flex-direction:column;gap:12px">
+<div style="display:flex;gap:8px">
+<div style="flex:1"><label class="mlbl">Date</label>${inpI('date','','date')}</div>
+<div style="flex:1"><label class="mlbl">Time</label>${inpI('time','','time')}</div>
+</div>
+<div><label class="mlbl">Type</label><select class="minp" style="font-size:13px" onchange="incF('type',this.value)">
+${Object.entries(INC_TYPES).map(([v,l])=>`<option value="${v}" ${f.type===v?'selected':''}>${l}</option>`).join('')}
+</select></div>
+<div><label class="mlbl">Severity</label><div style="display:flex;gap:6px">
+${Object.entries(INC_SEV).map(([v,s])=>`<button onclick="incF('severity','${v}');render()" style="flex:1;border:2px solid ${f.severity===v?s.color:'#E5E7EB'};background:${f.severity===v?s.bg:'white'};color:${f.severity===v?s.color:'#6B7280'};border-radius:10px;padding:8px;font-size:12px;font-weight:700;cursor:pointer">${s.label}</button>`).join('')}
+</div></div>
+<div><label class="mlbl">Location</label>${inpI('location','Where did this happen?')}</div>
+<div><label class="mlbl">Service Users Involved</label>
+<div style="display:flex;flex-wrap:wrap;gap:4px;max-height:120px;overflow-y:auto;border:1px solid #E5E7EB;border-radius:10px;padding:8px">
+${serviceUsers.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(su=>{const on=(f.suIds||[]).includes(su.id);return `<button onclick="toggleIncidentSU('${su.id}','${esc(su.name)}')" style="border:1.5px solid ${on?'#6366F1':'#E5E7EB'};background:${on?'#EEF2FF':'white'};color:${on?'#6366F1':'#6B7280'};border-radius:100px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer">${esc(su.name)}</button>`}).join('')}
+</div></div>
+<div><label class="mlbl">Staff Involved</label>
+<div style="display:flex;flex-wrap:wrap;gap:4px;border:1px solid #E5E7EB;border-radius:10px;padding:8px">
+${staff.map(s=>{const on=(f.staffInvolved||[]).includes(s);return `<button onclick="toggleIncidentStaff('${esc(s)}')" style="border:1.5px solid ${on?'#6366F1':'#E5E7EB'};background:${on?'#EEF2FF':'white'};color:${on?'#6366F1':'#6B7280'};border-radius:100px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer">${esc(s)}</button>`}).join('')}
+</div></div>
+<div><label class="mlbl">Witnesses</label>${inpI('witnesses','Names of witnesses')}</div>
+<div><label class="mlbl">Description — what happened *</label>${taI('description','Describe the incident in detail...')}</div>
+<div><label class="mlbl">Immediate action taken</label>${taI('actionTaken','What was done immediately...')}</div>
+<div style="display:flex;gap:8px">
+<div style="flex:1"><label class="mlbl">Reported to</label>${inpI('reportedTo','Manager / person informed')}</div>
+<div style="flex:1"><label class="mlbl">Reported by</label>${inpI('createdBy','Your name')}</div>
+</div>
+<div><label class="mlbl">Follow-up required</label>${taI('followUp','Any follow-up actions needed...')}</div>
+<div style="display:flex;align-items:center;gap:10px;padding:10px;background:#F9FAFB;border-radius:10px">
+<span style="font-size:13px;font-weight:600;flex:1">External report required?</span>
+<button onclick="incF('externalReport',!incidentForm.externalReport);render()" style="width:48px;height:28px;border-radius:100px;border:none;cursor:pointer;padding:2px;background:${f.externalReport?'#EF4444':'#D1D5DB'}">
+<div style="width:24px;height:24px;border-radius:100px;background:white;box-shadow:0 1px 3px rgba(0,0,0,0.2);transition:transform 0.2s;transform:translateX(${f.externalReport?'20px':'0'})"></div></button>
+</div>
+${f.externalReport?`<div><label class="mlbl">External body (CQC, safeguarding, police, etc.)</label>${inpI('externalBody','e.g. East Sussex Safeguarding')}</div>`:''}
+<button class="mbtn dark" ${!f.description.trim()?'disabled':''} onclick="saveIncident()">Save Incident Report</button>
+<button class="mbtn outline" onclick="incidentForm=null;render()">Cancel</button>
+</div></div></div>`;
+}
+
+// Incident detail overlay
+if(viewingIncident){
+const inc=incidents.find(i=>i.id===viewingIncident);
+if(inc){
+const sev=INC_SEV[inc.severity]||INC_SEV.medium;
+const typeLabel=INC_TYPES[inc.type]||inc.type;
+h+=`<div class="su-detail-overlay" onclick="if(event.target===this)viewingIncident=null;render()"><div class="su-detail-card">
+<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:12px">
+<div>
+<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+<span style="font-size:12px;font-weight:700;background:${sev.bg};color:${sev.color};padding:3px 10px;border-radius:100px">${sev.label} Severity</span>
+<span style="font-size:12px;font-weight:600;background:#F3F4F6;color:#374151;padding:3px 10px;border-radius:100px">${typeLabel}</span>
+<span style="font-size:12px;font-weight:700;padding:3px 10px;border-radius:100px;background:${inc.status==='open'?'#FEF3C7':'#F0FDF4'};color:${inc.status==='open'?'#D97706':'#16A34A'}">${inc.status==='open'?'Open':'Closed'}</span>
+</div>
+<div style="font-size:13px;font-weight:700;color:#1F2937">${inc.date} ${inc.time||''} ${inc.location?'· '+esc(inc.location):''}</div>
+</div>
+<button onclick="viewingIncident=null;render()" style="border:none;background:#F3F4F6;border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:16px;flex-shrink:0">✕</button>
+</div>`;
+if((inc.suNames||[]).length)h+=`<div class="su-detail-section"><h4>👤 Service Users Involved</h4><div style="font-size:13px;color:#1F2937">${esc(inc.suNames.join(', '))}</div></div>`;
+if((inc.staffInvolved||[]).length)h+=`<div class="su-detail-section"><h4>🧑‍💼 Staff Involved</h4><div style="font-size:13px;color:#1F2937">${esc(inc.staffInvolved.join(', '))}</div></div>`;
+if(inc.witnesses)h+=`<div class="su-detail-section"><h4>👁️ Witnesses</h4><div style="font-size:13px;color:#1F2937">${esc(inc.witnesses)}</div></div>`;
+h+=`<div class="su-detail-section"><h4>📋 Description</h4><div style="font-size:13px;color:#1F2937;line-height:1.6;white-space:pre-wrap">${esc(inc.description)}</div></div>`;
+if(inc.actionTaken)h+=`<div class="su-detail-section"><h4>✅ Immediate Action Taken</h4><div style="font-size:13px;color:#1F2937;line-height:1.6;white-space:pre-wrap">${esc(inc.actionTaken)}</div></div>`;
+if(inc.reportedTo||inc.createdBy)h+=`<div class="su-detail-section"><h4>📣 Reporting</h4>${inc.createdBy?`<div class="su-detail-row"><span class="lbl">Reported by</span><span class="val">${esc(inc.createdBy)}</span></div>`:''}${inc.reportedTo?`<div class="su-detail-row"><span class="lbl">Reported to</span><span class="val">${esc(inc.reportedTo)}</span></div>`:''}</div>`;
+if(inc.followUp)h+=`<div class="su-detail-section"><h4>🔄 Follow-up</h4><div style="font-size:13px;color:#1F2937;line-height:1.6;white-space:pre-wrap">${esc(inc.followUp)}</div></div>`;
+if(inc.externalReport)h+=`<div class="su-detail-section" style="border-left:3px solid #EF4444"><h4>⚠️ External Report Required</h4><div style="font-size:13px;color:#1F2937">${esc(inc.externalBody||'Body not specified')}</div></div>`;
+h+=`<div style="display:flex;gap:8px;margin-top:12px">`;
+h+=`<button onclick="toggleIncidentStatus('${inc.id}');viewingIncident=null;render()" style="flex:1;border:none;background:${inc.status==='open'?'#F0FDF4':'#FEF3C7'};color:${inc.status==='open'?'#16A34A':'#D97706'};border-radius:10px;padding:10px;font-size:12px;font-weight:700;cursor:pointer">${inc.status==='open'?'✅ Mark Closed':'🔄 Reopen'}</button>`;
+h+=`<button onclick="deleteIncident('${inc.id}')" style="border:none;background:#FEF2F2;color:#DC2626;border-radius:10px;padding:10px 14px;font-size:12px;font-weight:700;cursor:pointer">🗑️ Delete</button>`;
+h+=`</div></div></div>`;
+}}
+
+// Incident push to sheets info modal
+if(activeModal==='pushIncidents'){
+h+=`<div class="mov" onclick="activeModal=null;render()"><div class="msh" onclick="event.stopPropagation()"><div class="mha"></div><div class="mti">📤 Push Incidents to Sheets</div>`;
+if(!syncCfg.url){h+=`<p style="font-size:13px;color:#6B7280;margin-bottom:12px">You need to connect Google Sheets sync first (tap the sync button in the header). Once connected, incidents will push automatically.</p><button class="mbtn outline" onclick="activeModal=null;render()">OK</button>`;}
+else{h+=`<p style="font-size:13px;color:#6B7280;margin-bottom:12px">This will write all ${incidents.length} incident reports to an <strong>Incidents</strong> tab in your connected Google Sheet.</p><p style="font-size:12px;color:#9CA3AF;margin-bottom:12px">⚠️ Make sure your Apps Script is updated to the latest version (copy it from the Sync settings).</p><button class="mbtn dark" onclick="pushIncidentsToSheet();activeModal=null;render()">Push ${incidents.length} Incidents</button><button class="mbtn outline" onclick="activeModal=null;render()">Cancel</button>`;}
+h+=`</div></div>`;}
+
 // Rota edit overlay
 if(rotaEditCell||driverEditCell)h+=`<div onclick="rotaEditCell=null;driverEditCell=null;render()" style="position:fixed;inset:0;z-index:1001;background:rgba(0,0,0,0.3)"></div>`;
 
@@ -2152,6 +2315,7 @@ if(view==='sus'){const el=document.querySelector('.su-search');if(el&&suPageSear
 }
 
 load();loadSyncCfg();render();
+fetch('/api/me',{credentials:'include'}).then(r=>r.ok?r.json():null).then(d=>{if(d&&d.user){currentUser=d.user;render()}}).catch(()=>{});
 if(syncCfg.url&&syncCfg.autoSync)setTimeout(()=>pullFromSheet(),500);
 </script>
 </body>
