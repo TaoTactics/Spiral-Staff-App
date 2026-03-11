@@ -1,0 +1,13 @@
+# Database (contains sensitive service user data)
+*.db
+*.db-shm
+*.db-wal
+
+# Uploaded files (may contain sensitive documents)
+uploads/
+
+# Dependencies
+node_modules/
+
+# Misc
+package-lock.json
