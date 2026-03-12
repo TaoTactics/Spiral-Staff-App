@@ -231,19 +231,26 @@ app.get('/api/me', auth, (req, res) => {
   res.json({ user: req.user });
 });
 
-// ====== USER MANAGEMENT (superadmin only) ======
+// ====== USER MANAGEMENT (manager and above) ======
+
+// Roles that only superadmins can create/edit/delete
+const PROTECTED_ROLES = ['superadmin', 'admin', 'manager'];
 
 app.get('/api/users', auth, (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Admin only' });
+  if (!isManagerOrAbove(req)) return res.status(403).json({ error: 'Manager or above only' });
   const users = db.prepare('SELECT id, username, role, created_at FROM users').all();
   res.json({ users });
 });
 
 app.post('/api/users', auth, (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Admin only' });
+  if (!isManagerOrAbove(req)) return res.status(403).json({ error: 'Manager or above only' });
   const { username, password, role } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   const assignedRole = VALID_ROLES.includes(role) ? role : 'staff';
+  // Managers can only create non-privileged accounts
+  if (!isAdmin(req) && PROTECTED_ROLES.includes(assignedRole)) {
+    return res.status(403).json({ error: 'Managers cannot create superadmin or manager accounts' });
+  }
   try {
     const hash = bcrypt.hashSync(password, 10);
     db.prepare('INSERT INTO users (username, password, role) VALUES (?, ?, ?)').run(username, hash, assignedRole);
@@ -254,9 +261,19 @@ app.post('/api/users', auth, (req, res) => {
 });
 
 app.patch('/api/users/:id', auth, (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Admin only' });
+  if (!isManagerOrAbove(req)) return res.status(403).json({ error: 'Manager or above only' });
   const { username, password, role } = req.body;
   const userId = parseInt(req.params.id);
+  // Managers cannot edit superadmin or manager accounts
+  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (!isAdmin(req) && PROTECTED_ROLES.includes(target.role)) {
+    return res.status(403).json({ error: 'Managers cannot edit superadmin or manager accounts' });
+  }
+  // Managers cannot assign protected roles
+  if (!isAdmin(req) && role && PROTECTED_ROLES.includes(role)) {
+    return res.status(403).json({ error: 'Managers cannot assign that role' });
+  }
   try {
     if (username) {
       db.prepare('UPDATE users SET username = ? WHERE id = ?').run(username, userId);
@@ -280,8 +297,14 @@ app.patch('/api/users/:id', auth, (req, res) => {
 });
 
 app.delete('/api/users/:id', auth, (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'Admin only' });
+  if (!isManagerOrAbove(req)) return res.status(403).json({ error: 'Manager or above only' });
   if (parseInt(req.params.id) === req.user.id) return res.status(400).json({ error: 'Cannot delete yourself' });
+  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  // Managers cannot delete superadmin or manager accounts
+  if (!isAdmin(req) && PROTECTED_ROLES.includes(target.role)) {
+    return res.status(403).json({ error: 'Managers cannot delete superadmin or manager accounts' });
+  }
   db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
