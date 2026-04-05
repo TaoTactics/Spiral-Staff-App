@@ -4,32 +4,55 @@ const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'spiral-data.db');
 
 // ====== FILE UPLOAD SETUP ======
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
 
+const ALLOWED_MIME_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain', 'text/csv',
+  'application/zip', 'application/x-zip-compressed',
+]);
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
   filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
     const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
     cb(null, Date.now() + '-' + safe);
   }
 });
-const upload = multer({ storage, limits: { fileSize: 20 * 1024 * 1024 } }); // 20MB max
+const upload = multer({
+  storage,
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB max
+  fileFilter: (req, file, cb) => {
+    if (ALLOWED_MIME_TYPES.has(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(Object.assign(new Error(`File type not allowed: ${file.mimetype}`), { status: 400 }));
+    }
+  }
+});
 
 // ====== DATABASE SETUP ======
-const DB_PATH = path.join(__dirname, 'spiral-data.db');
 const db = new Database(DB_PATH);
-
-// Enable WAL mode for better performance
 db.pragma('journal_mode = WAL');
 
-// Create tables
 db.exec(`
   CREATE TABLE IF NOT EXISTS app_data (
     id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -59,41 +82,96 @@ db.exec(`
     uploaded_by TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   );
+  CREATE TABLE IF NOT EXISTS sessions (
+    token TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    username TEXT NOT NULL,
+    role TEXT NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
 `);
 
-// ====== MIDDLEWARE ======
-app.use(express.json({ limit: '10mb' }));
-app.use(express.static(__dirname, {
-  index: 'index.html',
-  extensions: ['html']
-}));
+// Periodic session cleanup (every hour)
+setInterval(() => {
+  db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
+}, 60 * 60 * 1000);
 
-// Generate a simple session token
-const crypto = require('crypto');
-const SESSION_SECRET = crypto.randomBytes(32).toString('hex');
-const sessions = {}; // token -> {username, role, created}
-
-function createSession(user) {
-  const token = crypto.randomBytes(24).toString('hex');
-  sessions[token] = { username: user.username, role: user.role, id: user.id, created: Date.now() };
-  // Clean old sessions (>24h)
-  for (const [k, v] of Object.entries(sessions)) {
-    if (Date.now() - v.created > 86400000) delete sessions[k];
-  }
-  return token;
-}
-
-// Cookie parser helper
+// ====== SESSION HELPERS ======
 function getCookie(req, name) {
   const cookies = req.headers.cookie || '';
   const match = cookies.split(';').map(c => c.trim()).find(c => c.startsWith(name + '='));
-  return match ? match.split('=')[1] : null;
+  return match ? decodeURIComponent(match.slice(name.length + 1)) : null;
 }
 
-// Valid roles
-const VALID_ROLES = ['superadmin', 'manager', 'staff', 'driver', 'serviceuser', 'carer'];
+function createSession(user) {
+  const token = crypto.randomBytes(24).toString('hex');
+  const expiresAt = Date.now() + 86400000; // 24h
+  db.prepare('INSERT INTO sessions (token, user_id, username, role, expires_at) VALUES (?, ?, ?, ?, ?)')
+    .run(token, user.id, user.username, user.role, expiresAt);
+  return token;
+}
 
-// Role helpers
+function getSession(token) {
+  if (!token) return null;
+  return db.prepare('SELECT * FROM sessions WHERE token = ? AND expires_at > ?').get(token, Date.now()) || null;
+}
+
+// ====== MIDDLEWARE ======
+
+// Trust the first proxy hop (Plesk reverse proxy) for accurate client IPs
+app.set('trust proxy', 1);
+
+// Security headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc:   ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      fontSrc:    ["'self'", 'https://fonts.gstatic.com'],
+      scriptSrc:  ["'self'"], // JS now in public/app.js — no unsafe-inline needed
+      imgSrc:     ["'self'", 'data:'],
+      connectSrc: ["'self'"],
+      objectSrc:     ["'none'"],
+      frameAncestors: ["'none'"],
+      // app.js builds UI via innerHTML with inline onclick/onchange handlers throughout —
+      // script-src-attr must allow unsafe-inline for those to work.
+      // script-src remains 'self' only, so external script injection is still blocked.
+      scriptSrcAttr: ["'unsafe-inline'"],
+    }
+  },
+  hsts: { maxAge: 31536000, includeSubDomains: true },
+}));
+
+// Serve frontend assets (CSS, JS) — public/ contains no secrets
+// Scoped to public/ only; project root is never exposed statically
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Request logging
+app.use(morgan('combined'));
+
+// Body parsing
+app.use(express.json({ limit: '10mb' }));
+
+// Rate limit Basic Auth credential attempts (does not affect already-authenticated requests)
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => {
+    // Only rate-limit requests using Basic Auth without a session cookie
+    const hasSession = !!getCookie(req, 'spiral_session');
+    const hasBasicAuth = (req.headers.authorization || '').startsWith('Basic ');
+    return hasSession || !hasBasicAuth;
+  },
+  message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
+});
+app.use(loginLimiter);
+
+// ====== ROLE HELPERS ======
+const VALID_ROLES = ['superadmin', 'manager', 'staff', 'driver', 'serviceuser', 'carer', 'foss'];
+const PROTECTED_ROLES = ['superadmin', 'admin', 'manager'];
+
 function isAdmin(req) {
   return req.user.role === 'superadmin' || req.user.role === 'admin';
 }
@@ -101,25 +179,34 @@ function isManagerOrAbove(req) {
   return isAdmin(req) || req.user.role === 'manager';
 }
 
-// Auth middleware - accepts Basic auth OR session cookie
+// ====== AUTH MIDDLEWARE ======
+
+// Parses "username:password" from a Basic Auth header, handling colons in passwords
+function parseBasicAuth(header) {
+  const b64 = header.split(' ')[1];
+  if (!b64) return null;
+  const decoded = Buffer.from(b64, 'base64').toString('utf8');
+  const colonIdx = decoded.indexOf(':');
+  if (colonIdx === -1) return null;
+  return { username: decoded.slice(0, colonIdx), password: decoded.slice(colonIdx + 1) };
+}
+
+// Auth middleware - accepts session cookie OR Basic auth
 function auth(req, res, next) {
-  // Try session cookie first
-  const token = getCookie(req, 'spiral_session');
-  if (token && sessions[token]) {
-    req.user = sessions[token];
+  const session = getSession(getCookie(req, 'spiral_session'));
+  if (session) {
+    req.user = { id: session.user_id, username: session.username, role: session.role };
     return next();
   }
-  // Fall back to Basic auth
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Basic ')) {
     res.set('WWW-Authenticate', 'Basic realm="Spiral Sussex Tracker"');
     return res.status(401).json({ error: 'Login required' });
   }
-  const decoded = Buffer.from(header.split(' ')[1], 'base64').toString();
-  const [username, password] = decoded.split(':');
-  
-  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
-  if (!user || !bcrypt.compareSync(password, user.password)) {
+  const creds = parseBasicAuth(header);
+  if (!creds) return res.status(401).json({ error: 'Invalid credentials' });
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(creds.username);
+  if (!user || !bcrypt.compareSync(creds.password, user.password)) {
     res.set('WWW-Authenticate', 'Basic realm="Spiral Sussex Tracker"');
     return res.status(401).json({ error: 'Invalid credentials' });
   }
@@ -127,32 +214,30 @@ function auth(req, res, next) {
   next();
 }
 
-// Auth for HTML pages - sets session cookie on success
+// Page auth - creates a session cookie on successful Basic auth
 function pageAuth(req, res, next) {
-  // Check session cookie
-  const token = getCookie(req, 'spiral_session');
-  if (token && sessions[token]) return next();
-  
+  const session = getSession(getCookie(req, 'spiral_session'));
+  if (session) return next();
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Basic ')) {
     res.set('WWW-Authenticate', 'Basic realm="Spiral Sussex Tracker"');
     return res.status(401).send('Login required');
   }
-  const decoded = Buffer.from(header.split(' ')[1], 'base64').toString();
-  const [username, password] = decoded.split(':');
-  
-  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
-  if (!user || !bcrypt.compareSync(password, user.password)) {
+  const creds = parseBasicAuth(header);
+  if (!creds) return res.status(401).send('Invalid credentials');
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(creds.username);
+  if (!user || !bcrypt.compareSync(creds.password, user.password)) {
     res.set('WWW-Authenticate', 'Basic realm="Spiral Sussex Tracker"');
     return res.status(401).send('Invalid credentials');
   }
-  // Set session cookie so API calls work
-  const sessionToken = createSession(user);
-  res.cookie('spiral_session', sessionToken, { httpOnly: true, maxAge: 86400000, sameSite: 'strict' });
+  const token = createSession(user);
+  res.cookie('spiral_session', token, { httpOnly: true, maxAge: 86400000, sameSite: 'strict' });
   next();
 }
 
-// Protect the main page
+// Serve the main page (auth required; express.static is intentionally absent — see note below)
+// NOTE: express.static is NOT used. It would serve all project files (server.js, .db, uploads/)
+// without authentication. index.html is the only static asset and is served here under auth.
 app.get('/', pageAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
@@ -177,20 +262,20 @@ app.get('/api/data', auth, (req, res) => {
 app.post('/api/data', auth, (req, res) => {
   try {
     const jsonStr = JSON.stringify(req.body.data);
-    
+
     // Upsert main data
     db.prepare(`
       INSERT INTO app_data (id, data, updated_at) VALUES (1, ?, datetime('now'))
       ON CONFLICT(id) DO UPDATE SET data = ?, updated_at = datetime('now')
     `).run(jsonStr, jsonStr);
-    
+
     // Auto-backup every save (keep last 50)
     db.prepare('INSERT INTO backups (data) VALUES (?)').run(jsonStr);
     const count = db.prepare('SELECT COUNT(*) as n FROM backups').get().n;
     if (count > 50) {
       db.prepare('DELETE FROM backups WHERE id IN (SELECT id FROM backups ORDER BY id ASC LIMIT ?)').run(count - 50);
     }
-    
+
     const row = db.prepare('SELECT updated_at FROM app_data WHERE id = 1').get();
     res.json({ ok: true, updated_at: row.updated_at });
   } catch (err) {
@@ -214,12 +299,12 @@ app.post('/api/backups/:id/restore', auth, (req, res) => {
     if (!isAdmin(req)) return res.status(403).json({ error: 'Admin only' });
     const backup = db.prepare('SELECT data FROM backups WHERE id = ?').get(req.params.id);
     if (!backup) return res.status(404).json({ error: 'Backup not found' });
-    
+
     db.prepare(`
       INSERT INTO app_data (id, data, updated_at) VALUES (1, ?, datetime('now'))
       ON CONFLICT(id) DO UPDATE SET data = ?, updated_at = datetime('now')
     `).run(backup.data, backup.data);
-    
+
     res.json({ ok: true, message: 'Restored' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -231,10 +316,29 @@ app.get('/api/me', auth, (req, res) => {
   res.json({ user: req.user });
 });
 
-// ====== USER MANAGEMENT (manager and above) ======
+// Logout
+app.post('/api/logout', (req, res) => {
+  const token = getCookie(req, 'spiral_session');
+  if (token) db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+  res.clearCookie('spiral_session');
+  res.json({ ok: true });
+});
 
-// Roles that only superadmins can create/edit/delete
-const PROTECTED_ROLES = ['superadmin', 'admin', 'manager'];
+// Change own password
+app.post('/api/change-password', auth, (req, res) => {
+  const { current, newPassword } = req.body;
+  if (!current || !newPassword) return res.status(400).json({ error: 'Current and new password required' });
+  if (newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user || !bcrypt.compareSync(current, user.password)) {
+    return res.status(401).json({ error: 'Current password is incorrect' });
+  }
+  const hash = bcrypt.hashSync(newPassword, 10);
+  db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hash, req.user.id);
+  res.json({ ok: true });
+});
+
+// ====== USER MANAGEMENT (manager and above) ======
 
 app.get('/api/users', auth, (req, res) => {
   if (!isManagerOrAbove(req)) return res.status(403).json({ error: 'Manager or above only' });
@@ -247,7 +351,6 @@ app.post('/api/users', auth, (req, res) => {
   const { username, password, role } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   const assignedRole = VALID_ROLES.includes(role) ? role : 'staff';
-  // Managers can only create non-privileged accounts
   if (!isAdmin(req) && PROTECTED_ROLES.includes(assignedRole)) {
     return res.status(403).json({ error: 'Managers cannot create superadmin or manager accounts' });
   }
@@ -264,13 +367,11 @@ app.patch('/api/users/:id', auth, (req, res) => {
   if (!isManagerOrAbove(req)) return res.status(403).json({ error: 'Manager or above only' });
   const { username, password, role } = req.body;
   const userId = parseInt(req.params.id);
-  // Managers cannot edit superadmin or manager accounts
   const target = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
   if (!target) return res.status(404).json({ error: 'User not found' });
   if (!isAdmin(req) && PROTECTED_ROLES.includes(target.role)) {
     return res.status(403).json({ error: 'Managers cannot edit superadmin or manager accounts' });
   }
-  // Managers cannot assign protected roles
   if (!isAdmin(req) && role && PROTECTED_ROLES.includes(role)) {
     return res.status(403).json({ error: 'Managers cannot assign that role' });
   }
@@ -283,7 +384,6 @@ app.patch('/api/users/:id', auth, (req, res) => {
       db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hash, userId);
     }
     if (role && VALID_ROLES.includes(role)) {
-      // Prevent demoting yourself away from superadmin if you're the last one
       if (userId === req.user.id && req.user.role === 'superadmin' && role !== 'superadmin') {
         const count = db.prepare("SELECT COUNT(*) as n FROM users WHERE role = 'superadmin'").get().n;
         if (count <= 1) return res.status(400).json({ error: 'Cannot remove last superadmin' });
@@ -301,7 +401,6 @@ app.delete('/api/users/:id', auth, (req, res) => {
   if (parseInt(req.params.id) === req.user.id) return res.status(400).json({ error: 'Cannot delete yourself' });
   const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!target) return res.status(404).json({ error: 'User not found' });
-  // Managers cannot delete superadmin or manager accounts
   if (!isAdmin(req) && PROTECTED_ROLES.includes(target.role)) {
     return res.status(403).json({ error: 'Managers cannot delete superadmin or manager accounts' });
   }
@@ -349,14 +448,24 @@ app.post('/api/files', auth, upload.single('file'), (req, res) => {
   }
 });
 
-// Download file
+// Multer error handler (catches fileFilter rejections)
+app.use((err, req, res, next) => {
+  if (err && (err.code === 'LIMIT_FILE_SIZE' || err.status === 400)) {
+    return res.status(400).json({ error: err.message });
+  }
+  next(err);
+});
+
+// Download file (auth required; uploads/ is not served as static)
 app.get('/api/files/:id/download', auth, (req, res) => {
   try {
     const file = db.prepare('SELECT * FROM files WHERE id = ?').get(req.params.id);
     if (!file) return res.status(404).json({ error: 'File not found' });
     const filePath = path.join(UPLOAD_DIR, file.filename);
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File missing from disk' });
-    res.setHeader('Content-Disposition', 'attachment; filename="' + file.original_name + '"');
+    // Use RFC 5987 encoding to prevent header injection from filenames containing quotes/newlines
+    const encodedName = encodeURIComponent(file.original_name);
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodedName}`);
     res.setHeader('Content-Type', file.mime_type || 'application/octet-stream');
     res.sendFile(filePath);
   } catch (err) {
@@ -364,7 +473,7 @@ app.get('/api/files/:id/download', auth, (req, res) => {
   }
 });
 
-// Delete file (admin only)
+// Delete file (manager and above)
 app.delete('/api/files/:id', auth, (req, res) => {
   try {
     if (!isManagerOrAbove(req)) return res.status(403).json({ error: 'Manager or above only' });
@@ -377,6 +486,31 @@ app.delete('/api/files/:id', auth, (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ====== OFFLINE BACKUP ======
+const { generateOfflineBackup } = require('./backup-template');
+
+app.get('/api/backup/offline', auth, (req, res) => {
+  if (!isManagerOrAbove(req)) return res.status(403).json({ error: 'Manager or above only' });
+  try {
+    const row = db.prepare('SELECT data FROM app_data WHERE id = 1').get();
+    const appData = row ? JSON.parse(row.data) : {};
+    const users = db.prepare('SELECT username, role FROM users').all();
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const html = generateOfflineBackup(appData, users, now);
+    const date = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="spiral-backup-${date}.html"`);
+    res.send(html);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true, uptime: process.uptime() });
 });
 
 // ====== FIRST-RUN SETUP ======
@@ -403,5 +537,5 @@ app.listen(PORT, () => {
 });
 
 // Graceful shutdown
-process.on('SIGINT', () => { db.close(); process.exit(0); });
+process.on('SIGINT',  () => { db.close(); process.exit(0); });
 process.on('SIGTERM', () => { db.close(); process.exit(0); });

@@ -9,5 +9,11 @@ uploads/
 # Dependencies
 node_modules/
 
+# Backup HTML files (contain sensitive data)
+backups/
+
+# Env vars (backup credentials)
+.env
+
 # Misc
 package-lock.json
