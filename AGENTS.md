@@ -74,6 +74,7 @@ None. After changes:
 - **`app_data` schema** — add fields; never rename or remove without a data migration.
 - **Auth middleware** (`auth`, `pageAuth`) — changes here can expose the entire app.
 - **`express.static`** — scoped to `public/` only. Do not expand it to the project root (that would expose `server.js`, `.db`, `uploads/`).
+- **Public frontend bundle** (`index.html`, `public/app.js`, `public/app.css`) — never embed real service-user PII/medical seed data here. Sensitive records must come from authenticated server data or explicit imports only.
 - **Helmet / CSP** — `scriptSrc` is `'self'` only (JS lives in `public/app.js`). `scriptSrcAttr` is `'unsafe-inline'` — required because app.js builds all UI via innerHTML with inline `onclick`/`onchange` handlers. Do not remove either directive.
 - **`loginLimiter`** — rate-limits Basic Auth attempts. Do not remove.
 - **Backup window** — currently 50 rolling backups. Reducing it silently deletes recovery points.
