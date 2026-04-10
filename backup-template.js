@@ -52,12 +52,28 @@ function generateOfflineBackup(appData, users, generatedAt) {
   // Build Staff table
   let staffRows = '';
   staffProfiles.forEach(sp => {
+    const p = sp.personal || {};
+    const e = sp.employment || {};
+    const cm = sp.compliance || {};
+    const caps = sp.capabilities || {};
+    const capList = ['personalCare','firstAid','manualHandling','medicationAdmin','epilepsyAware','autismAware','mentalHealthFirstAid','foodHygiene','driving','minibusPATS']
+      .filter(k => caps[k]).map(k => k.replace(/([A-Z])/g, ' $1').trim()).join(', ');
+    const customCaps = (caps.custom || []).map(c => esc(c.label)).join(', ');
+    const allCaps = [capList, customCaps].filter(Boolean).join(', ');
+    const quals = (sp.qualifications || []).map(q => esc(q.title || '') + (q.expiryDate ? ' (exp: ' + q.expiryDate + ')' : '')).join('; ');
     staffRows += `<tr>
       <td><strong>${esc(sp.name)}</strong></td>
       <td>${esc(sp.role)}</td>
       <td>${esc(sp.phone)}</td>
       <td>${esc(sp.email)}</td>
       <td>${esc(sp.emergency)}</td>
+      <td>${esc(e.jobTitle || '')}</td>
+      <td>${esc(e.startDate || '')}</td>
+      <td>${esc(e.contractType || '')}</td>
+      <td>${esc(allCaps)}</td>
+      <td>${esc(cm.dbsNumber || '')}${cm.dbsExpiryDate ? ' (exp: ' + cm.dbsExpiryDate + ')' : ''}</td>
+      <td>${esc(cm.safeguardingLevel || '')}</td>
+      <td>${esc(quals)}</td>
       <td>${esc(sp.notes)}</td>
     </tr>`;
   });
@@ -310,7 +326,7 @@ h5{font-size:13px;font-weight:600;margin:10px 0 4px;color:#4b5563}
     <h3>Staff Profiles</h3>
     <div class="count">${staffProfiles.length} profile(s)</div>
     ${staffProfiles.length ? `<table><thead><tr>
-      <th>Name</th><th>Role</th><th>Phone</th><th>Email</th><th>Emergency Contact</th><th>Notes</th>
+      <th>Name</th><th>Role</th><th>Phone</th><th>Email</th><th>Emergency</th><th>Job Title</th><th>Start Date</th><th>Contract</th><th>Capabilities</th><th>DBS</th><th>Safeguarding</th><th>Qualifications</th><th>Notes</th>
     </tr></thead><tbody>${staffRows}</tbody></table>` : '<p class="empty">No staff profiles.</p>'}
   </div>
 

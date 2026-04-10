@@ -488,6 +488,89 @@ app.delete('/api/files/:id', auth, (req, res) => {
   }
 });
 
+// ====== STAFF HR ENDPOINTS ======
+
+function canAccessStaffRecord(req, staffId, level) {
+  const row = db.prepare('SELECT data FROM app_data WHERE id = 1').get();
+  if (!row) return { allowed: false };
+  const appData = JSON.parse(row.data);
+  const profile = (appData.staffProfiles || []).find(p => p.id === staffId);
+  if (!profile) return { allowed: false };
+
+  // Own record
+  if (profile.userId === req.user.id || profile.name === req.user.username)
+    return { allowed: true, accessLevel: 'own', profile, appData };
+
+  // Superadmin
+  if (isAdmin(req))
+    return { allowed: true, accessLevel: 'admin', profile, appData };
+
+  const access = (appData.hrAccess || {})[staffId] || {};
+  if (level === 'view' && ((access.viewers || []).includes(req.user.id) || (access.editors || []).includes(req.user.id)))
+    return { allowed: true, accessLevel: 'view', profile, appData };
+  if (level === 'edit' && (access.editors || []).includes(req.user.id))
+    return { allowed: true, accessLevel: 'edit', profile, appData };
+
+  // Managers can view all
+  if (level === 'view' && isManagerOrAbove(req))
+    return { allowed: true, accessLevel: 'view', profile, appData };
+
+  return { allowed: false };
+}
+
+app.get('/api/staff/:staffId', auth, (req, res) => {
+  const check = canAccessStaffRecord(req, req.params.staffId, 'view');
+  if (!check.allowed) return res.status(403).json({ error: 'Access denied' });
+  res.json({ profile: check.profile, accessLevel: check.accessLevel });
+});
+
+app.patch('/api/staff/:staffId', auth, (req, res) => {
+  const check = canAccessStaffRecord(req, req.params.staffId, 'edit');
+  if (!check.allowed) return res.status(403).json({ error: 'Access denied' });
+  try {
+    const updates = req.body;
+    const profile = check.profile;
+    // Merge updates into profile
+    for (const [key, value] of Object.entries(updates)) {
+      if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        profile[key] = { ...(profile[key] || {}), ...value };
+      } else {
+        profile[key] = value;
+      }
+    }
+    const data = JSON.stringify(check.appData);
+    db.prepare('UPDATE app_data SET data = ? WHERE id = 1').run(data);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/staff/:staffId/access', auth, (req, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Superadmin only' });
+  const row = db.prepare('SELECT data FROM app_data WHERE id = 1').get();
+  const appData = row ? JSON.parse(row.data) : {};
+  const access = (appData.hrAccess || {})[req.params.staffId] || { viewers: [], editors: [] };
+  res.json(access);
+});
+
+app.put('/api/staff/:staffId/access', auth, (req, res) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: 'Superadmin only' });
+  try {
+    const row = db.prepare('SELECT data FROM app_data WHERE id = 1').get();
+    const appData = row ? JSON.parse(row.data) : {};
+    if (!appData.hrAccess) appData.hrAccess = {};
+    appData.hrAccess[req.params.staffId] = {
+      viewers: req.body.viewers || [],
+      editors: req.body.editors || []
+    };
+    db.prepare('UPDATE app_data SET data = ? WHERE id = 1').run(JSON.stringify(appData));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ====== OFFLINE BACKUP ======
 const { generateOfflineBackup } = require('./backup-template');
 

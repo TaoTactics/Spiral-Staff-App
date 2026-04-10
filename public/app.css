@@ -358,3 +358,14 @@ input:focus,textarea:focus,select:focus{border-color:#3A7BD5!important;box-shado
 .file-cat-hdr{font-size:12px;font-weight:700;color:#6366F1;text-transform:uppercase;letter-spacing:0.3px;margin:12px 0 6px;padding-bottom:4px;border-bottom:1px solid #EEF2FF}
 .file-upload-area{background:white;border:2px dashed #D1D5DB;border-radius:12px;padding:16px;text-align:center;margin-bottom:12px;cursor:pointer;transition:all 0.15s}
 .file-upload-area:hover{border-color:#6366F1;background:#F5F3FF}
+
+/* HR / Staff system */
+.hr-form{display:flex;flex-direction:column;gap:0}
+.hr-row{display:flex;flex-direction:column;gap:4px;padding:10px 0;border-bottom:1px solid #F3F4F6}
+.hr-row label{font-size:11px;font-weight:700;color:#6B7280;text-transform:uppercase;letter-spacing:.03em}
+.hr-row input,.hr-row textarea,.hr-row select{border:1px solid #D1D5DB;border-radius:8px;padding:8px 12px;font-size:14px;font-family:inherit;color:#1F2937;background:white;width:100%;box-sizing:border-box}
+.hr-row input:focus,.hr-row textarea:focus,.hr-row select:focus{outline:none;border-color:#6366F1;box-shadow:0 0 0 3px #6366F120}
+.hr-row input:disabled,.hr-row textarea:disabled,.hr-row select:disabled{background:#F9FAFB;color:#6B7280;cursor:not-allowed}
+.staff-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,0.1)!important}
+.staff-card.locked:hover{transform:none;box-shadow:0 1px 4px rgba(0,0,0,0.07)!important}
+.cap-badge{display:inline-block;background:#EEF2FF;color:#6366F1;font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;letter-spacing:.02em;vertical-align:middle;margin-left:2px}

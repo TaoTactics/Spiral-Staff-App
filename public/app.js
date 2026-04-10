@@ -122,6 +122,8 @@ let minibusView='day';
 let minibusDay='mon';
 let minibusRoute=null;
 let minibusWeekOffset=0;
+let hrAccess={};
+let viewingStaffId=null,staffDetailTab='personal',staffListSearch='';
 
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
@@ -357,7 +359,7 @@ return s;
 let serverMode=false; // true if running on server
 let saveDebounce=null;
 
-function getDataObj(){return {departments:D,staff,history,schedule,serviceUsers,staffProfiles,rota,driverRota,weekSchedules,registers,fossData,incidents,minibusAllocation}}
+function getDataObj(){return {departments:D,staff,history,schedule,serviceUsers,staffProfiles,rota,driverRota,weekSchedules,registers,fossData,incidents,minibusAllocation,hrAccess}}
 
 function load(){
 // Detect if we're on the server (not file:// or github.io)
@@ -387,14 +389,16 @@ history=d.history||[];
 schedule=(d.schedule||JSON.parse(JSON.stringify(DEF_SCHEDULE))).map(migrateSession);
 serviceUsers=d.serviceUsers||JSON.parse(JSON.stringify(DEF_SUS));
 staffProfiles=d.staffProfiles||JSON.parse(JSON.stringify(DEF_STAFF_PROFILES));
+staffProfiles.forEach(sp=>{sp.personal=sp.personal||{};sp.employment=sp.employment||{};sp.qualifications=sp.qualifications||[];sp.capabilities=sp.capabilities||{};sp.compliance=sp.compliance||{};sp.health=sp.health||{};sp.documents=sp.documents||[]});
 rota=d.rota||{};
 driverRota=d.driverRota||{};
 weekSchedules=d.weekSchedules||{};
 registers=d.registers||{};
 fossData=d.fossData||{departments:[],staffProfiles:[],contacts:[],completedLog:[]};
+hrAccess=d.hrAccess||{};
 saveToLS();return;
 }
-D=JSON.parse(JSON.stringify(DEFS.departments));staff=[...DEFS.staff];history=[];schedule=JSON.parse(JSON.stringify(DEF_SCHEDULE));serviceUsers=JSON.parse(JSON.stringify(DEF_SUS));staffProfiles=JSON.parse(JSON.stringify(DEF_STAFF_PROFILES));rota={};driverRota={};weekSchedules={};registers={};fossData={departments:[],staffProfiles:[],contacts:[],completedLog:[]};
+D=JSON.parse(JSON.stringify(DEFS.departments));staff=[...DEFS.staff];history=[];schedule=JSON.parse(JSON.stringify(DEF_SCHEDULE));serviceUsers=JSON.parse(JSON.stringify(DEF_SUS));staffProfiles=JSON.parse(JSON.stringify(DEF_STAFF_PROFILES));rota={};driverRota={};weekSchedules={};registers={};fossData={departments:[],staffProfiles:[],contacts:[],completedLog:[]};hrAccess={};
 }
 
 function applyData(d){
@@ -404,6 +408,7 @@ history=d.history||[];
 schedule=(d.schedule||JSON.parse(JSON.stringify(DEF_SCHEDULE))).map(migrateSession);
 serviceUsers=d.serviceUsers||JSON.parse(JSON.stringify(DEF_SUS));
 staffProfiles=d.staffProfiles||JSON.parse(JSON.stringify(DEF_STAFF_PROFILES));
+staffProfiles.forEach(sp=>{sp.personal=sp.personal||{};sp.employment=sp.employment||{};sp.qualifications=sp.qualifications||[];sp.capabilities=sp.capabilities||{};sp.compliance=sp.compliance||{};sp.health=sp.health||{};sp.documents=sp.documents||[]});
 rota=d.rota||{};
 driverRota=d.driverRota||{};
 weekSchedules=d.weekSchedules||{};
@@ -411,6 +416,7 @@ registers=d.registers||{};
 fossData=d.fossData||{departments:[],staffProfiles:[],contacts:[],completedLog:[]};
 incidents=d.incidents||[];
 minibusAllocation=d.minibusAllocation||{};
+hrAccess=d.hrAccess||{};
 staff=staffProfiles.map(p=>p.name);
 }
 
@@ -684,10 +690,150 @@ const ROLE_LABELS={superadmin:'Superadmin',manager:'Manager',staff:'Staff',drive
 const ROLE_COLORS={superadmin:'#7C3AED',manager:'#2563EB',staff:'#059669',driver:'#D97706',serviceuser:'#DB2777',carer:'#0891B2',foss:'#10B981'};
 function isSuperAdmin(){return currentUser&&(currentUser.role==='superadmin'||currentUser.role==='admin')}
 function isManagerOrAbove(){return currentUser&&['superadmin','admin','manager'].includes(currentUser.role)}
+function canAccessStaff(spId,level){
+  if(isSuperAdmin())return true;
+  const sp=staffProfiles.find(p=>p.id===spId);
+  if(sp&&currentUser&&(sp.userId===currentUser.id||sp.name===currentUser.username))return true;
+  const ac=(hrAccess||{})[spId]||{};
+  if(level==='view')return(ac.viewers||[]).includes(currentUser?.id)||(ac.editors||[]).includes(currentUser?.id);
+  if(level==='edit')return(ac.editors||[]).includes(currentUser?.id);
+  return false;
+}
+function isOwnProfile(sp){return currentUser&&(sp.userId===currentUser.id||sp.name===currentUser.username)}
+function getCapBadges(sp){
+  const c=sp.capabilities||{};
+  let b='';
+  if(c.personalCare)b+='<span class="cap-badge" title="Personal Care">PC</span>';
+  if(c.firstAid)b+='<span class="cap-badge" title="First Aid">FA</span>';
+  if(c.manualHandling)b+='<span class="cap-badge" title="Manual Handling">MH</span>';
+  if(c.medicationAdmin)b+='<span class="cap-badge" title="Medication Admin">Med</span>';
+  if(c.epilepsyAware)b+='<span class="cap-badge" title="Epilepsy Aware">Ep</span>';
+  if(c.autismAware)b+='<span class="cap-badge" title="Autism Aware">Au</span>';
+  if(c.mentalHealthFirstAid)b+='<span class="cap-badge" title="MH First Aid">MH-FA</span>';
+  if(c.foodHygiene)b+='<span class="cap-badge" title="Food Hygiene">FH</span>';
+  if(c.driving)b+='<span class="cap-badge" title="Driver">DR</span>';
+  if(c.minibusPATS)b+='<span class="cap-badge" title="Minibus PATS">PATS</span>';
+  if(c.custom)(c.custom||[]).forEach(x=>{b+='<span class="cap-badge" title="'+esc(x.label)+'">'+esc(x.label.slice(0,4))+'</span>'});
+  return b;
+}
+function updateStaffField(spId,cat,field,val){
+  const sp=staffProfiles.find(p=>p.id===spId);
+  if(!sp)return;
+  if(cat==='top'){sp[field]=val;}
+  else{if(!sp[cat])sp[cat]={};sp[cat][field]=val;}
+  save();
+}
+function addQualification(spId){
+  const sp=staffProfiles.find(p=>p.id===spId);
+  if(!sp)return;
+  sp.qualifications.push({id:uid(),title:'',provider:'',dateObtained:'',expiryDate:'',notes:''});
+  save();render();
+}
+function removeQualification(spId,qId){
+  const sp=staffProfiles.find(p=>p.id===spId);
+  if(!sp)return;
+  sp.qualifications=sp.qualifications.filter(q=>q.id!==qId);
+  save();render();
+}
+function updateQualField(spId,qId,field,val){
+  const sp=staffProfiles.find(p=>p.id===spId);
+  if(!sp)return;
+  const q=sp.qualifications.find(x=>x.id===qId);
+  if(q){q[field]=val;save();}
+}
+function addReturnToWork(spId){
+  const sp=staffProfiles.find(p=>p.id===spId);
+  if(!sp)return;
+  if(!sp.health)sp.health={};
+  if(!sp.health.returnToWorkNotes)sp.health.returnToWorkNotes=[];
+  sp.health.returnToWorkNotes.push({id:uid(),date:today(),notes:'',reviewedBy:currentUser?.username||''});
+  save();render();
+}
+function removeReturnToWork(spId,rId){
+  const sp=staffProfiles.find(p=>p.id===spId);
+  if(!sp||!sp.health)return;
+  sp.health.returnToWorkNotes=(sp.health.returnToWorkNotes||[]).filter(r=>r.id!==rId);
+  save();render();
+}
+function updateRtwField(spId,rId,field,val){
+  const sp=staffProfiles.find(p=>p.id===spId);
+  if(!sp||!sp.health)return;
+  const r=(sp.health.returnToWorkNotes||[]).find(x=>x.id===rId);
+  if(r){r[field]=val;save();}
+}
+function toggleCapability(spId,cap){
+  const sp=staffProfiles.find(p=>p.id===spId);
+  if(!sp)return;
+  if(!sp.capabilities)sp.capabilities={};
+  sp.capabilities[cap]=!sp.capabilities[cap];
+  save();render();
+}
+function addCustomCap(spId){
+  const sp=staffProfiles.find(p=>p.id===spId);
+  if(!sp)return;
+  if(!sp.capabilities)sp.capabilities={};
+  if(!sp.capabilities.custom)sp.capabilities.custom=[];
+  const label=prompt('Enter capability name:');
+  if(!label)return;
+  sp.capabilities.custom.push({id:uid(),label:label.trim()});
+  save();render();
+}
+function removeCustomCap(spId,cId){
+  const sp=staffProfiles.find(p=>p.id===spId);
+  if(!sp||!sp.capabilities||!sp.capabilities.custom)return;
+  sp.capabilities.custom=sp.capabilities.custom.filter(c=>c.id!==cId);
+  save();render();
+}
+async function uploadStaffDoc(e,spId){
+  e.preventDefault();
+  const form=e.target;
+  const fd=new FormData();
+  fd.append('file',form.file.files[0]);
+  fd.append('department','hr');
+  try{
+    const r=await fetch('/api/files',{method:'POST',credentials:'include',body:fd});
+    const d=await r.json();
+    if(d.id){
+      const sp=staffProfiles.find(p=>p.id===spId);
+      if(sp){
+        sp.documents.push({fileId:d.id,label:form.label.value||form.file.files[0].name,category:form.category.value,uploadedAt:new Date().toISOString()});
+        save();render();showToast('Document uploaded');
+      }
+    }else{showToast('Upload failed');}
+  }catch{showToast('Upload error');}
+  return false;
+}
+function removeStaffDoc(spId,fileId){
+  if(!confirm('Remove this document link?'))return;
+  const sp=staffProfiles.find(p=>p.id===spId);
+  if(!sp)return;
+  sp.documents=sp.documents.filter(d=>d.fileId!==fileId);
+  save();render();
+}
+let hrAccessModal=null;
+function openHrAccessModal(spId){
+  hrAccessModal={spId,viewers:[...((hrAccess[spId]||{}).viewers||[])],editors:[...((hrAccess[spId]||{}).editors||[])]};
+  render();
+}
+function saveHrAccess(){
+  if(!hrAccessModal)return;
+  if(!hrAccess)hrAccess={};
+  hrAccess[hrAccessModal.spId]={viewers:hrAccessModal.viewers,editors:hrAccessModal.editors};
+  hrAccessModal=null;
+  save();render();showToast('Access updated');
+}
+function toggleHrAccess(userId,level){
+  if(!hrAccessModal)return;
+  const arr=level==='edit'?hrAccessModal.editors:hrAccessModal.viewers;
+  const idx=arr.indexOf(userId);
+  if(idx>=0)arr.splice(idx,1);else arr.push(userId);
+  render();
+}
 function canSeeTab(tab){
   const r=currentUser?.role||'staff';
   if(tab==='usersTab') return isManagerOrAbove();
   if(['rotaTab','dash','hist','incidentsTab'].includes(tab)) return isManagerOrAbove();
+  if(tab==='staffTab') return true;
   return true;
 }
 async function loadUsers(){
@@ -703,9 +849,17 @@ function syncStaffFromUsers(){
   staffUsers.forEach((u,i)=>{
     const existing=staffProfiles.find(p=>p.name===u.username);
     if(existing){
+      if(!existing.userId)existing.userId=u.id;
+      if(!existing.personal)existing.personal={};
+      if(!existing.employment)existing.employment={};
+      if(!existing.qualifications)existing.qualifications=[];
+      if(!existing.capabilities)existing.capabilities={};
+      if(!existing.compliance)existing.compliance={};
+      if(!existing.health)existing.health={};
+      if(!existing.documents)existing.documents=[];
       newProfiles.push(existing);
     }else{
-      newProfiles.push({id:'sp'+uid(),name:u.username,role:ROLE_LABELS[u.role]||u.role,phone:'',email:'',emergency:'',notes:'',color:colors[i%colors.length]});
+      newProfiles.push({id:'sp'+uid(),name:u.username,userId:u.id,role:ROLE_LABELS[u.role]||u.role,phone:'',email:'',emergency:'',notes:'',color:colors[i%colors.length],personal:{},employment:{},qualifications:[],capabilities:{},compliance:{},health:{},documents:[]});
     }
   });
   staffProfiles=newProfiles;
@@ -856,7 +1010,7 @@ if(appMode==='spiral'&&view==='depts'){h+=`<div class="ov-box"><div class="ov-ro
 
 // Tabs
 if(appMode==='spiral'){
-h+=`<div class="tabs" role="tablist" aria-label="Main navigation"><button class="tab ${view==='depts'?'on':''}" role="tab" aria-selected="${view==='depts'}" onclick="view='depts';render()">📋 Tasks</button><button class="tab ${view==='sched'?'on':''}" role="tab" aria-selected="${view==='sched'}" onclick="view='sched';render()">📅 Schedule</button><button class="tab ${view==='regTab'?'on':''}" role="tab" aria-selected="${view==='regTab'}" onclick="view='regTab';render()">📝 Register</button><button class="tab ${view==='sus'?'on':''}" role="tab" aria-selected="${view==='sus'}" onclick="view='sus';render()">👤 SUs</button>${canSeeTab('rotaTab')?`<button class="tab ${view==='rotaTab'?'on':''}" role="tab" aria-selected="${view==='rotaTab'}" onclick="view='rotaTab';render()">📊 Rota</button>`:''}${canSeeTab('dash')?`<button class="tab ${view==='dash'?'on':''}" role="tab" aria-selected="${view==='dash'}" onclick="view='dash';render()">📈 Dashboard</button>`:''}<button class="tab ${view==='calTab'?'on':''}" role="tab" aria-selected="${view==='calTab'}" onclick="view='calTab';render()">📆 Calendar</button><button class="tab ${view==='filesTab'?'on':''}" role="tab" aria-selected="${view==='filesTab'}" onclick="view='filesTab';loadFiles('spiral');render()">📁 Files</button>${canSeeTab('hist')?`<button class="tab ${view==='hist'?'on':''}" role="tab" aria-selected="${view==='hist'}" onclick="view='hist';render()">🕐 History</button>`:''}${canSeeTab('incidentsTab')?`<button class="tab ${view==='incidentsTab'?'on':''}" role="tab" aria-selected="${view==='incidentsTab'}" onclick="view='incidentsTab';render()">🚨 Incidents${incidents.filter(i=>i.status==='open').length?` <span style="background:#EF4444;color:white;border-radius:100px;padding:1px 5px;font-size:9px">${incidents.filter(i=>i.status==='open').length}</span>`:''}</button>`:''}`+`<button class="tab ${view==='minibusTab'?'on':''}" role="tab" aria-selected="${view==='minibusTab'}" onclick="view='minibusTab';render()">🚐 Minibus</button>${canSeeTab('usersTab')?`<button class="tab ${view==='usersTab'?'on':''}" role="tab" aria-selected="${view==='usersTab'}" onclick="view='usersTab';if(!usersList.length)loadUsers();render()">👥 Users</button>`:''}</div></div>`;
+h+=`<div class="tabs" role="tablist" aria-label="Main navigation"><button class="tab ${view==='depts'?'on':''}" role="tab" aria-selected="${view==='depts'}" onclick="view='depts';render()">📋 Tasks</button><button class="tab ${view==='sched'?'on':''}" role="tab" aria-selected="${view==='sched'}" onclick="view='sched';render()">📅 Schedule</button><button class="tab ${view==='regTab'?'on':''}" role="tab" aria-selected="${view==='regTab'}" onclick="view='regTab';render()">📝 Register</button><button class="tab ${view==='sus'?'on':''}" role="tab" aria-selected="${view==='sus'}" onclick="view='sus';render()">👤 SUs</button>${canSeeTab('rotaTab')?`<button class="tab ${view==='rotaTab'?'on':''}" role="tab" aria-selected="${view==='rotaTab'}" onclick="view='rotaTab';render()">📊 Rota</button>`:''}${canSeeTab('dash')?`<button class="tab ${view==='dash'?'on':''}" role="tab" aria-selected="${view==='dash'}" onclick="view='dash';render()">📈 Dashboard</button>`:''}<button class="tab ${view==='calTab'?'on':''}" role="tab" aria-selected="${view==='calTab'}" onclick="view='calTab';render()">📆 Calendar</button><button class="tab ${view==='filesTab'?'on':''}" role="tab" aria-selected="${view==='filesTab'}" onclick="view='filesTab';loadFiles('spiral');render()">📁 Files</button>${canSeeTab('hist')?`<button class="tab ${view==='hist'?'on':''}" role="tab" aria-selected="${view==='hist'}" onclick="view='hist';render()">🕐 History</button>`:''}${canSeeTab('incidentsTab')?`<button class="tab ${view==='incidentsTab'?'on':''}" role="tab" aria-selected="${view==='incidentsTab'}" onclick="view='incidentsTab';render()">🚨 Incidents${incidents.filter(i=>i.status==='open').length?` <span style="background:#EF4444;color:white;border-radius:100px;padding:1px 5px;font-size:9px">${incidents.filter(i=>i.status==='open').length}</span>`:''}</button>`:''}`+`<button class="tab ${view==='minibusTab'?'on':''}" role="tab" aria-selected="${view==='minibusTab'}" onclick="view='minibusTab';render()">🚐 Minibus</button>${canSeeTab('staffTab')?`<button class="tab ${view==='staffTab'?'on':''}" role="tab" aria-selected="${view==='staffTab'}" onclick="view='staffTab';viewingStaffId=null;render()">🧑‍💼 Staff</button>`:''}${canSeeTab('usersTab')?`<button class="tab ${view==='usersTab'?'on':''}" role="tab" aria-selected="${view==='usersTab'}" onclick="view='usersTab';if(!usersList.length)loadUsers();render()">👥 Users</button>`:''}</div></div>`;
 } else {
 h+=`<div class="tabs" role="tablist" aria-label="Main navigation"><button class="tab ${fossView==='fossTasks'?'on':''}" role="tab" aria-selected="${fossView==='fossTasks'}" onclick="fossView='fossTasks';render()">📋 Tasks</button><button class="tab ${fossView==='fossStaff'?'on':''}" role="tab" aria-selected="${fossView==='fossStaff'}" onclick="fossView='fossStaff';render()">🧑‍💼 Team</button><button class="tab ${fossView==='fossContacts'?'on':''}" role="tab" aria-selected="${fossView==='fossContacts'}" onclick="fossView='fossContacts';render()">📇 Contacts</button><button class="tab ${fossView==='fossSUs'?'on':''}" role="tab" aria-selected="${fossView==='fossSUs'}" onclick="fossView='fossSUs';render()">👤 SUs</button><button class="tab ${fossView==='fossLog'?'on':''}" role="tab" aria-selected="${fossView==='fossLog'}" onclick="fossView='fossLog';render()">✅ Log</button><button class="tab ${fossView==='fossFiles'?'on':''}" role="tab" aria-selected="${fossView==='fossFiles'}" onclick="fossView='fossFiles';loadFiles('foss');render()">📁 Files</button><button class="tab ${fossView==='fossCal'?'on':''}" role="tab" aria-selected="${fossView==='fossCal'}" onclick="fossView='fossCal';render()">📆 Calendar</button></div></div>`;
 }
@@ -876,6 +1030,7 @@ if(mobileMenuOpen){
     if(canSeeTab('hist'))h+=`<button class="mob-tab ${view==='hist'?'on':''}" onclick="view='hist';mobileMenuOpen=false;render()">🕐 History</button>`;
     if(canSeeTab('incidentsTab'))h+=`<button class="mob-tab ${view==='incidentsTab'?'on':''}" onclick="view='incidentsTab';mobileMenuOpen=false;render()">🚨 Incidents</button>`;
     h+=`<button class="mob-tab ${view==='minibusTab'?'on':''}" onclick="view='minibusTab';mobileMenuOpen=false;render()">🚐 Minibus</button>`;
+    if(canSeeTab('staffTab'))h+=`<button class="mob-tab ${view==='staffTab'?'on':''}" onclick="view='staffTab';viewingStaffId=null;mobileMenuOpen=false;render()">🧑‍💼 Staff</button>`;
     if(canSeeTab('usersTab'))h+=`<button class="mob-tab ${view==='usersTab'?'on':''}" onclick="view='usersTab';if(!usersList.length)loadUsers();mobileMenuOpen=false;render()">👥 Users</button>`;
     h+=`</div></div>`;
   } else {
@@ -1320,7 +1475,7 @@ h+=`<div class="rota-sub-tabs"><button class="rota-sub-tab ${rotaSubTab==='rooms
 // Legend
 h+=`<div class="rota-legend">`;
 staffProfiles.forEach(sp=>{
-h+=`<div class="rota-legend-item"><div class="rota-legend-dot" style="background:${sp.color}"></div>${esc(sp.name)}</div>`;
+h+=`<div class="rota-legend-item"><div class="rota-legend-dot" style="background:${sp.color}"></div>${esc(sp.name)}${getCapBadges(sp)}</div>`;
 });
 h+=`</div>`;
 
@@ -1348,7 +1503,7 @@ h+=`</div>`;
 if(isEditing){
 h+=`<div class="rota-edit-popup" onclick="event.stopPropagation()">`;
 h+=`<div class="rota-edit-title">${ROOM_ICONS[room]||''} ${esc(room)} · ${DAY_NAMES[day]} ${period.toUpperCase()}</div>`;
-staffProfiles.forEach(sp=>{const isOn=assigned.includes(sp.name);h+=`<div class="rota-staff-option" onclick="toggleRotaStaff('${esc(wk)}','${esc(room)}','${day}','${period}','${esc(sp.name)}')"><div class="rota-staff-check ${isOn?'on':''}">${isOn?'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>':''}</div><span style="color:${sp.color};font-weight:600">${esc(sp.name)}</span></div>`});
+staffProfiles.forEach(sp=>{const isOn=assigned.includes(sp.name);h+=`<div class="rota-staff-option" onclick="toggleRotaStaff('${esc(wk)}','${esc(room)}','${day}','${period}','${esc(sp.name)}')"><div class="rota-staff-check ${isOn?'on':''}">${isOn?'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>':''}</div><span style="color:${sp.color};font-weight:600">${esc(sp.name)}</span>${getCapBadges(sp)}</div>`});
 if(assigned.length){h+=`<div style="border-top:1px solid #E5E7EB;margin-top:4px;padding-top:4px"><button onclick="clearRotaCell('${esc(wk)}','${esc(room)}','${day}','${period}')" style="border:none;background:none;color:#EF4444;font-size:11px;font-weight:600;cursor:pointer;padding:4px 8px">Clear all</button></div>`}
 h+=`</div>`;
 }
@@ -1458,7 +1613,33 @@ h+=`<div class="dash-title" style="margin-top:16px">Workload</div>`;
 [...staff,'Unassigned'].forEach(person=>{const isUn=person==='Unassigned';const tasks=D.flatMap(d=>d.tasks.filter(t=>isUn?!t.assignee:t.assignee===person));if(!tasks.length)return;const dc=tasks.filter(t=>t.done).length;const hi=tasks.filter(t=>!t.done&&t.priority==='high').length;const inc=tasks.filter(t=>!t.done).sort((a,b)=>priOrd(a.priority)-priOrd(b.priority));
 h+=`<div class="dash-card"><div class="dash-person-hdr"><div class="dash-av" style="background:${isUn?'#9CA3AF':stClr(person)}">${isUn?'?':stIni(person)}</div><div style="flex:1"><div class="dash-nm">${esc(person)}</div><div class="dash-stats">${tasks.length} tasks · ${dc} done${hi?` · <span style="color:#DC2626">${hi} high</span>`:''}</div></div><span style="font-size:18px;font-weight:700;color:${pct(dc,tasks.length)>=80?'#22C55E':pct(dc,tasks.length)>=50?'#D97706':'#6B7280'}">${pct(dc,tasks.length)}%</span></div>`;
 inc.slice(0,5).forEach(t=>{const dn=D.find(d=>d.tasks.some(x=>x.id===t.id))?.name||'';h+=`<div class="dash-task"><span class="badge ${t.priority==='high'?'b-hi':t.priority==='low'?'b-lo':'b-md'}" style="flex-shrink:0">${t.priority==='high'?'High':t.priority==='low'?'Low':'Med'}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.text)}</span><span class="dash-dept-tag">${esc(dn)}</span></div>`});
-if(inc.length>5)h+=`<p style="font-size:10px;color:#9CA3AF;text-align:center;padding:3px">+${inc.length-5} more</p>`;h+=`</div>`});h+=`</div>`}
+if(inc.length>5)h+=`<p style="font-size:10px;color:#9CA3AF;text-align:center;padding:3px">+${inc.length-5} more</p>`;h+=`</div>`});
+// Compliance alerts
+const compAlerts=[];
+const now=new Date();
+staffProfiles.forEach(sp=>{
+  const cm=sp.compliance||{};
+  if(cm.dbsExpiryDate){const d=new Date(cm.dbsExpiryDate+'T23:59:59');const days=Math.floor((d-now)/86400000);if(days<0)compAlerts.push({name:sp.name,type:'DBS Check',days,color:sp.color});else if(days<90)compAlerts.push({name:sp.name,type:'DBS Check',days,color:sp.color});}
+  if(cm.safeguardingDate){const d=new Date(cm.safeguardingDate+'T23:59:59');const days=Math.floor((d-now)/86400000);if(days<0)compAlerts.push({name:sp.name,type:'Safeguarding',days,color:sp.color});else if(days<90)compAlerts.push({name:sp.name,type:'Safeguarding',days,color:sp.color});}
+  if(cm.rightToWorkExpiry){const d=new Date(cm.rightToWorkExpiry+'T23:59:59');const days=Math.floor((d-now)/86400000);if(days<0)compAlerts.push({name:sp.name,type:'Right to Work',days,color:sp.color});else if(days<90)compAlerts.push({name:sp.name,type:'Right to Work',days,color:sp.color});}
+  (sp.qualifications||[]).forEach(q=>{if(q.expiryDate){const d=new Date(q.expiryDate+'T23:59:59');const days=Math.floor((d-now)/86400000);if(days<0)compAlerts.push({name:sp.name,type:q.title||'Qualification',days,color:sp.color});else if(days<90)compAlerts.push({name:sp.name,type:q.title||'Qualification',days,color:sp.color});}});
+});
+compAlerts.sort((a,b)=>a.days-b.days);
+if(compAlerts.length){
+  h+=`<div class="dash-title" style="margin-top:16px">⚠️ Compliance Alerts</div>`;
+  compAlerts.forEach(a=>{
+    const expired=a.days<0;
+    const bg=expired?'#FEF2F2':a.days<30?'#FEF3C7':'#F9FAFB';
+    const border=expired?'#FECACA':a.days<30?'#FDE68A':'#E5E7EB';
+    const txt=expired?`<span style="color:#DC2626;font-weight:700">EXPIRED ${Math.abs(a.days)}d ago</span>`:`<span style="color:${a.days<30?'#D97706':'#6B7280'};font-weight:600">${a.days}d remaining</span>`;
+    h+=`<div style="background:${bg};border:1px solid ${border};border-radius:10px;padding:10px 14px;margin-bottom:6px;display:flex;align-items:center;gap:10px">`;
+    h+=`<div style="width:8px;height:8px;border-radius:50%;background:${a.color};flex-shrink:0"></div>`;
+    h+=`<div style="flex:1"><span style="font-size:13px;font-weight:600;color:#1F2937">${esc(a.name)}</span> <span style="font-size:12px;color:#6B7280">· ${esc(a.type)}</span></div>`;
+    h+=txt;
+    h+=`</div>`;
+  });
+}
+h+=`</div>`}
 
 // ===== CALENDAR TAB =====
 if(view==='calTab'){
@@ -1834,6 +2015,210 @@ if(minibusView==='day'){
 
 h+=`</div>`; // outer padding
 }
+
+// ===== STAFF / HR TAB =====
+if(view==='staffTab'){
+const canManage=isManagerOrAbove();
+const visibleStaff=canManage?staffProfiles:staffProfiles.filter(sp=>isOwnProfile(sp)||canAccessStaff(sp.id,'view'));
+const filtered=staffListSearch?visibleStaff.filter(sp=>sp.name.toLowerCase().includes(staffListSearch.toLowerCase())):visibleStaff;
+
+if(!viewingStaffId){
+// ---- Staff list view ----
+h+=`<div style="padding:16px;max-width:800px;margin:0 auto">`;
+h+=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px"><h2 style="margin:0;font-size:18px;font-weight:700;color:#1F2937">🧑‍💼 Staff Directory</h2>`;
+h+=`<input type="text" placeholder="Search staff..." value="${esc(staffListSearch)}" oninput="staffListSearch=this.value;render()" style="border:1px solid #D1D5DB;border-radius:10px;padding:8px 14px;font-size:13px;width:200px"></div>`;
+h+=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px">`;
+filtered.forEach(sp=>{
+  const own=isOwnProfile(sp);
+  const canView=own||canManage||canAccessStaff(sp.id,'view');
+  const roleColor=ROLE_COLORS[Object.keys(ROLE_LABELS).find(k=>ROLE_LABELS[k]===sp.role)]||'#6B7280';
+  const caps=getCapBadges(sp);
+  h+=`<div class="staff-card${canView?'':' locked'}" ${canView?`onclick="viewingStaffId='${sp.id}';staffDetailTab='personal';render()"`:''} style="background:white;border-radius:14px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.07);cursor:${canView?'pointer':'default'};position:relative;transition:transform .15s;border:2px solid ${own?sp.color+'44':'transparent'}">`;
+  h+=`<div style="display:flex;align-items:center;gap:12px">`;
+  h+=`<div style="width:42px;height:42px;border-radius:50%;background:${sp.color};display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:14px;flex-shrink:0">${stIni(sp.name)}</div>`;
+  h+=`<div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:700;color:#1F2937;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(sp.name)}${own?' <span style="font-size:10px;color:#9CA3AF">(you)</span>':''}</div>`;
+  h+=`<div style="margin-top:2px"><span style="background:${roleColor}22;color:${roleColor};border-radius:100px;padding:2px 8px;font-size:10px;font-weight:700">${esc(sp.role)}</span></div></div>`;
+  if(!canView)h+=`<span style="font-size:18px;color:#D1D5DB" title="Access restricted">🔒</span>`;
+  h+=`</div>`;
+  if(caps)h+=`<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px">${caps}</div>`;
+  h+=`</div>`;
+});
+if(!filtered.length)h+=`<p style="color:#9CA3AF;text-align:center;grid-column:1/-1;padding:40px">No staff found.</p>`;
+h+=`</div></div>`;
+} else {
+// ---- Staff detail page ----
+const sp=staffProfiles.find(p=>p.id===viewingStaffId);
+if(!sp){viewingStaffId=null;}
+else{
+const own=isOwnProfile(sp);
+const canEdit=own||isSuperAdmin()||canAccessStaff(sp.id,'edit');
+const roleColor=ROLE_COLORS[Object.keys(ROLE_LABELS).find(k=>ROLE_LABELS[k]===sp.role)]||'#6B7280';
+h+=`<div style="padding:16px;max-width:700px;margin:0 auto">`;
+// Header
+h+=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">`;
+h+=`<button onclick="viewingStaffId=null;render()" style="background:none;border:1px solid #D1D5DB;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px">← Back</button>`;
+h+=`<div style="width:48px;height:48px;border-radius:50%;background:${sp.color};display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:16px">${stIni(sp.name)}</div>`;
+h+=`<div><div style="font-size:18px;font-weight:700;color:#1F2937">${esc(sp.name)}</div>`;
+h+=`<span style="background:${roleColor}22;color:${roleColor};border-radius:100px;padding:2px 10px;font-size:11px;font-weight:700">${esc(sp.role)}</span></div>`;
+if(isSuperAdmin())h+=`<button onclick="openHrAccessModal('${sp.id}')" style="margin-left:auto;background:#6366F120;color:#6366F1;border:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">Manage Access</button>`;
+h+=`</div>`;
+// Sub-tabs
+const tabs=[['personal','Personal'],['employment','Employment'],['qualifications','Qualifications'],['capabilities','Skills'],['compliance','DBS & Compliance'],['health','Health'],['documents','Documents']];
+h+=`<div style="display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap;border-bottom:2px solid #E5E7EB;padding-bottom:0">`;
+tabs.forEach(([k,lbl])=>{
+  h+=`<button onclick="staffDetailTab='${k}';render()" style="padding:8px 14px;font-size:12px;font-weight:${staffDetailTab===k?'700':'500'};color:${staffDetailTab===k?'#6366F1':'#6B7280'};border:none;background:none;cursor:pointer;border-bottom:2px solid ${staffDetailTab===k?'#6366F1':'transparent'};margin-bottom:-2px">${lbl}</button>`;
+});
+h+=`</div>`;
+const ro=!canEdit;
+const dis=ro?'disabled':'';
+const dStyle=ro?'opacity:0.7;':'';
+
+// === Personal Details ===
+if(staffDetailTab==='personal'){
+const p=sp.personal||{};
+h+=`<div class="hr-form">`;
+h+=`<div class="hr-row"><label>Date of Birth</label><input type="date" value="${p.dob||''}" ${dis} onchange="updateStaffField('${sp.id}','personal','dob',this.value)" style="${dStyle}"></div>`;
+h+=`<div class="hr-row"><label>Address</label><textarea rows="2" ${dis} onchange="updateStaffField('${sp.id}','personal','address',this.value)" style="${dStyle}">${esc(p.address||'')}</textarea></div>`;
+h+=`<div class="hr-row"><label>Postcode</label><input value="${esc(p.postcode||'')}" ${dis} onchange="updateStaffField('${sp.id}','personal','postcode',this.value)" style="${dStyle}"></div>`;
+h+=`<div class="hr-row"><label>Phone</label><input value="${esc(sp.phone||'')}" ${dis} onchange="updateStaffField('${sp.id}','top','phone',this.value)" style="${dStyle}"></div>`;
+h+=`<div class="hr-row"><label>Email</label><input type="email" value="${esc(sp.email||'')}" ${dis} onchange="updateStaffField('${sp.id}','top','email',this.value)" style="${dStyle}"></div>`;
+h+=`<div class="hr-row"><label>Next of Kin</label><input value="${esc(p.nextOfKin||'')}" ${dis} onchange="updateStaffField('${sp.id}','personal','nextOfKin',this.value)" style="${dStyle}"></div>`;
+h+=`<div class="hr-row"><label>Next of Kin Phone</label><input value="${esc(p.nextOfKinPhone||'')}" ${dis} onchange="updateStaffField('${sp.id}','personal','nextOfKinPhone',this.value)" style="${dStyle}"></div>`;
+h+=`<div class="hr-row"><label>Emergency Contact</label><input value="${esc(sp.emergency||'')}" ${dis} onchange="updateStaffField('${sp.id}','top','emergency',this.value)" style="${dStyle}"></div>`;
+h+=`<div class="hr-row"><label>Notes</label><textarea rows="3" ${dis} onchange="updateStaffField('${sp.id}','top','notes',this.value)" style="${dStyle}">${esc(sp.notes||'')}</textarea></div>`;
+h+=`</div>`;
+}
+
+// === Employment ===
+if(staffDetailTab==='employment'){
+const e=sp.employment||{};
+h+=`<div class="hr-form">`;
+h+=`<div class="hr-row"><label>Job Title</label><input value="${esc(e.jobTitle||'')}" ${dis} onchange="updateStaffField('${sp.id}','employment','jobTitle',this.value)" style="${dStyle}"></div>`;
+h+=`<div class="hr-row"><label>Start Date</label><input type="date" value="${e.startDate||''}" ${dis} onchange="updateStaffField('${sp.id}','employment','startDate',this.value)" style="${dStyle}"></div>`;
+h+=`<div class="hr-row"><label>Contract Type</label><select ${dis} onchange="updateStaffField('${sp.id}','employment','contractType',this.value)" style="${dStyle}"><option value="">—</option>${['Permanent','Fixed-term','Zero-hours','Bank','Volunteer'].map(t=>`<option${(e.contractType||'')===t?' selected':''}>${t}</option>`).join('')}</select></div>`;
+h+=`<div class="hr-row"><label>Hours per Week</label><input type="number" value="${esc(e.hoursPerWeek||'')}" ${dis} onchange="updateStaffField('${sp.id}','employment','hoursPerWeek',this.value)" style="${dStyle}"></div>`;
+h+=`<div class="hr-row"><label>End Date</label><input type="date" value="${e.endDate||''}" ${dis} onchange="updateStaffField('${sp.id}','employment','endDate',this.value)" style="${dStyle}"></div>`;
+h+=`<div class="hr-row"><label>Leave Entitlement</label><input value="${esc(e.leaveEntitlement||'')}" ${dis} onchange="updateStaffField('${sp.id}','employment','leaveEntitlement',this.value)" style="${dStyle}" placeholder="e.g. 28 days"></div>`;
+h+=`</div>`;
+}
+
+// === Qualifications ===
+if(staffDetailTab==='qualifications'){
+const qs=sp.qualifications||[];
+h+=`<div class="hr-form">`;
+if(!ro)h+=`<button onclick="addQualification('${sp.id}')" style="background:#6366F1;color:white;border:none;border-radius:10px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:12px">+ Add Qualification</button>`;
+if(!qs.length)h+=`<p style="color:#9CA3AF;text-align:center;padding:20px">No qualifications recorded yet.</p>`;
+qs.forEach(q=>{
+  const isExpired=q.expiryDate&&new Date(q.expiryDate+'T23:59:59')<new Date();
+  const isExpiring=q.expiryDate&&!isExpired&&(new Date(q.expiryDate+'T23:59:59')-new Date())<90*86400000;
+  h+=`<div style="background:${isExpired?'#FEF2F2':isExpiring?'#FEF3C7':'#F9FAFB'};border-radius:12px;padding:14px;margin-bottom:10px;border:1px solid ${isExpired?'#FECACA':isExpiring?'#FDE68A':'#E5E7EB'}">`;
+  h+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><strong style="font-size:13px;color:#1F2937">${esc(q.title||'Untitled')}</strong>`;
+  if(isExpired)h+=`<span style="background:#DC2626;color:white;font-size:9px;padding:2px 8px;border-radius:100px;font-weight:700">EXPIRED</span>`;
+  else if(isExpiring)h+=`<span style="background:#D97706;color:white;font-size:9px;padding:2px 8px;border-radius:100px;font-weight:700">EXPIRING SOON</span>`;
+  h+=`</div>`;
+  h+=`<div class="hr-row"><label>Title</label><input value="${esc(q.title||'')}" ${dis} onchange="updateQualField('${sp.id}','${q.id}','title',this.value)" style="${dStyle}"></div>`;
+  h+=`<div class="hr-row"><label>Provider</label><input value="${esc(q.provider||'')}" ${dis} onchange="updateQualField('${sp.id}','${q.id}','provider',this.value)" style="${dStyle}"></div>`;
+  h+=`<div class="hr-row"><label>Date Obtained</label><input type="date" value="${q.dateObtained||''}" ${dis} onchange="updateQualField('${sp.id}','${q.id}','dateObtained',this.value)" style="${dStyle}"></div>`;
+  h+=`<div class="hr-row"><label>Expiry Date</label><input type="date" value="${q.expiryDate||''}" ${dis} onchange="updateQualField('${sp.id}','${q.id}','expiryDate',this.value)" style="${dStyle}"></div>`;
+  h+=`<div class="hr-row"><label>Notes</label><input value="${esc(q.notes||'')}" ${dis} onchange="updateQualField('${sp.id}','${q.id}','notes',this.value)" style="${dStyle}"></div>`;
+  if(!ro)h+=`<button onclick="removeQualification('${sp.id}','${q.id}')" style="background:#FEE2E2;color:#DC2626;border:none;border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;margin-top:6px">Remove</button>`;
+  h+=`</div>`;
+});
+h+=`</div>`;
+}
+
+// === Skills & Capabilities ===
+if(staffDetailTab==='capabilities'){
+const c=sp.capabilities||{};
+const CAPS=[['personalCare','Personal Care','Trained to provide personal care support'],['firstAid','First Aid','Current first aid certification'],['manualHandling','Manual Handling','Trained in safe manual handling'],['medicationAdmin','Medication Admin','Authorised to administer medication'],['epilepsyAware','Epilepsy Aware','Epilepsy awareness training'],['autismAware','Autism Aware','Autism awareness training'],['mentalHealthFirstAid','MH First Aid','Mental health first aid trained'],['foodHygiene','Food Hygiene','Food hygiene certificate'],['driving','Driver','Can drive organisation vehicles'],['minibusPATS','Minibus PATS','PATS minibus assessment passed']];
+h+=`<div class="hr-form">`;
+h+=`<p style="font-size:12px;color:#6B7280;margin:0 0 12px">These capabilities are shown as badges in the Rota view.</p>`;
+CAPS.forEach(([key,label,desc])=>{
+  h+=`<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #F3F4F6">`;
+  h+=`<input type="checkbox" ${c[key]?'checked':''} ${dis} onchange="toggleCapability('${sp.id}','${key}')" style="width:18px;height:18px;accent-color:#6366F1">`;
+  h+=`<div><div style="font-size:14px;font-weight:600;color:#1F2937">${label}</div><div style="font-size:11px;color:#9CA3AF">${desc}</div></div>`;
+  h+=`</div>`;
+});
+h+=`<div style="margin-top:12px;padding-top:12px;border-top:2px solid #E5E7EB"><div style="font-size:13px;font-weight:700;color:#374151;margin-bottom:8px">Custom Capabilities</div>`;
+(c.custom||[]).forEach(x=>{
+  h+=`<div style="display:flex;align-items:center;gap:8px;padding:6px 0"><span class="cap-badge">${esc(x.label)}</span>`;
+  if(!ro)h+=`<button onclick="removeCustomCap('${sp.id}','${x.id}')" style="background:none;border:none;color:#DC2626;cursor:pointer;font-size:16px">×</button>`;
+  h+=`</div>`;
+});
+if(!ro)h+=`<button onclick="addCustomCap('${sp.id}')" style="background:#F3F4F6;border:1px dashed #D1D5DB;border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer;margin-top:6px">+ Add Custom</button>`;
+h+=`</div></div>`;
+}
+
+// === DBS & Compliance ===
+if(staffDetailTab==='compliance'){
+const cm=sp.compliance||{};
+const dbsExpired=cm.dbsExpiryDate&&new Date(cm.dbsExpiryDate+'T23:59:59')<new Date();
+const dbsExpiring=cm.dbsExpiryDate&&!dbsExpired&&(new Date(cm.dbsExpiryDate+'T23:59:59')-new Date())<90*86400000;
+h+=`<div class="hr-form">`;
+if(dbsExpired)h+=`<div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:10px 14px;margin-bottom:12px;color:#DC2626;font-size:13px;font-weight:600">⚠️ DBS check has expired!</div>`;
+else if(dbsExpiring)h+=`<div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:10px;padding:10px 14px;margin-bottom:12px;color:#92400E;font-size:13px;font-weight:600">⏰ DBS check expiring soon</div>`;
+h+=`<div class="hr-row"><label>DBS Number</label><input value="${esc(cm.dbsNumber||'')}" ${dis} onchange="updateStaffField('${sp.id}','compliance','dbsNumber',this.value)" style="${dStyle}"></div>`;
+h+=`<div class="hr-row"><label>DBS Level</label><select ${dis} onchange="updateStaffField('${sp.id}','compliance','dbsLevel',this.value)" style="${dStyle}"><option value="">—</option>${['Basic','Standard','Enhanced','Enhanced with barred list'].map(t=>`<option${(cm.dbsLevel||'')===t?' selected':''}>${t}</option>`).join('')}</select></div>`;
+h+=`<div class="hr-row"><label>DBS Issue Date</label><input type="date" value="${cm.dbsIssueDate||''}" ${dis} onchange="updateStaffField('${sp.id}','compliance','dbsIssueDate',this.value)" style="${dStyle}"></div>`;
+h+=`<div class="hr-row"><label>DBS Expiry Date</label><input type="date" value="${cm.dbsExpiryDate||''}" ${dis} onchange="updateStaffField('${sp.id}','compliance','dbsExpiryDate',this.value)" style="${dStyle}"></div>`;
+h+=`<div class="hr-row"><label>Safeguarding Level</label><select ${dis} onchange="updateStaffField('${sp.id}','compliance','safeguardingLevel',this.value)" style="${dStyle}"><option value="">—</option>${['None','Level 1','Level 2','Level 3'].map(t=>`<option${(cm.safeguardingLevel||'')===t?' selected':''}>${t}</option>`).join('')}</select></div>`;
+h+=`<div class="hr-row"><label>Safeguarding Date</label><input type="date" value="${cm.safeguardingDate||''}" ${dis} onchange="updateStaffField('${sp.id}','compliance','safeguardingDate',this.value)" style="${dStyle}"></div>`;
+h+=`<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #F3F4F6"><input type="checkbox" ${cm.rightToWork?'checked':''} ${dis} onchange="updateStaffField('${sp.id}','compliance','rightToWork',this.checked)" style="width:18px;height:18px;accent-color:#6366F1"><label style="font-size:14px;font-weight:600;color:#1F2937">Right to Work verified</label></div>`;
+h+=`<div class="hr-row"><label>Right to Work Expiry</label><input type="date" value="${cm.rightToWorkExpiry||''}" ${dis} onchange="updateStaffField('${sp.id}','compliance','rightToWorkExpiry',this.value)" style="${dStyle}"></div>`;
+h+=`</div>`;
+}
+
+// === Health & Wellbeing ===
+if(staffDetailTab==='health'){
+const hl=sp.health||{};
+h+=`<div class="hr-form">`;
+h+=`<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:10px 14px;margin-bottom:12px;color:#1E40AF;font-size:12px">ℹ️ This section contains special category data under UK GDPR. Record only what is necessary and relevant to the employee's role.</div>`;
+h+=`<div class="hr-row"><label>Reasonable Adjustments</label><textarea rows="3" ${dis} onchange="updateStaffField('${sp.id}','health','reasonableAdjustments',this.value)" style="${dStyle}">${esc(hl.reasonableAdjustments||'')}</textarea></div>`;
+h+=`<div style="margin-top:16px;padding-top:12px;border-top:2px solid #E5E7EB"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><div style="font-size:14px;font-weight:700;color:#374151">Return to Work Notes</div>`;
+if(!ro)h+=`<button onclick="addReturnToWork('${sp.id}')" style="background:#6366F1;color:white;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">+ Add Note</button>`;
+h+=`</div>`;
+const rtws=(hl.returnToWorkNotes||[]).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+if(!rtws.length)h+=`<p style="color:#9CA3AF;text-align:center;padding:16px">No return to work notes.</p>`;
+rtws.forEach(r=>{
+  h+=`<div style="background:#F9FAFB;border-radius:10px;padding:12px;margin-bottom:8px;border:1px solid #E5E7EB">`;
+  h+=`<div class="hr-row"><label>Date</label><input type="date" value="${r.date||''}" ${dis} onchange="updateRtwField('${sp.id}','${r.id}','date',this.value)" style="${dStyle}"></div>`;
+  h+=`<div class="hr-row"><label>Notes</label><textarea rows="2" ${dis} onchange="updateRtwField('${sp.id}','${r.id}','notes',this.value)" style="${dStyle}">${esc(r.notes||'')}</textarea></div>`;
+  h+=`<div class="hr-row"><label>Reviewed By</label><input value="${esc(r.reviewedBy||'')}" ${dis} onchange="updateRtwField('${sp.id}','${r.id}','reviewedBy',this.value)" style="${dStyle}"></div>`;
+  if(!ro)h+=`<button onclick="removeReturnToWork('${sp.id}','${r.id}')" style="background:#FEE2E2;color:#DC2626;border:none;border-radius:8px;padding:4px 10px;font-size:11px;cursor:pointer;margin-top:4px">Remove</button>`;
+  h+=`</div>`;
+});
+h+=`</div></div>`;
+}
+
+// === Documents ===
+if(staffDetailTab==='documents'){
+const docs=sp.documents||[];
+h+=`<div class="hr-form">`;
+if(!ro){
+h+=`<div style="margin-bottom:16px"><label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:6px">Upload Document</label>`;
+h+=`<form onsubmit="return uploadStaffDoc(event,'${sp.id}')" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">`;
+h+=`<input type="file" name="file" required style="font-size:13px">`;
+h+=`<select name="category" style="border:1px solid #D1D5DB;border-radius:8px;padding:6px;font-size:12px"><option>DBS</option><option>Contract</option><option>Training</option><option>ID</option><option>Other</option></select>`;
+h+=`<input name="label" placeholder="Label (optional)" style="border:1px solid #D1D5DB;border-radius:8px;padding:6px 10px;font-size:12px;width:150px">`;
+h+=`<button type="submit" style="background:#6366F1;color:white;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">Upload</button>`;
+h+=`</form></div>`;
+}
+if(!docs.length)h+=`<p style="color:#9CA3AF;text-align:center;padding:20px">No documents uploaded yet.</p>`;
+docs.forEach(d=>{
+  h+=`<div style="display:flex;align-items:center;gap:10px;padding:10px;background:#F9FAFB;border-radius:10px;margin-bottom:6px;border:1px solid #E5E7EB">`;
+  h+=`<span style="font-size:18px">📄</span>`;
+  h+=`<div style="flex:1"><div style="font-size:13px;font-weight:600;color:#1F2937">${esc(d.label||'Document')}</div><div style="font-size:11px;color:#9CA3AF">${esc(d.category||'')} · ${d.uploadedAt?d.uploadedAt.split('T')[0]:''}</div></div>`;
+  h+=`<a href="/api/files/${d.fileId}/download" style="background:#EEF2FF;color:#6366F1;border-radius:8px;padding:5px 12px;font-size:11px;font-weight:700;text-decoration:none">Download</a>`;
+  if(!ro)h+=`<button onclick="removeStaffDoc('${sp.id}','${d.fileId}')" style="background:#FEE2E2;color:#DC2626;border:none;border-radius:8px;padding:5px 10px;font-size:11px;cursor:pointer">Remove</button>`;
+  h+=`</div>`;
+});
+h+=`</div>`;
+}
+
+h+=`</div>`; // end detail wrapper
+} // end if(sp)
+} // end if(viewingStaffId)
+} // end if staffTab
 
 // ===== USERS TAB =====
 if(view==='usersTab'&&isManagerOrAbove()){
@@ -2218,6 +2603,29 @@ if(rotaEditCell||driverEditCell)h+=`<div onclick="rotaEditCell=null;driverEditCe
 
 // SU Detail Modal
 if(viewingSU)h+=renderSUDetailModal();
+
+// HR Access Modal
+if(hrAccessModal&&isSuperAdmin()){
+  const sp=staffProfiles.find(p=>p.id===hrAccessModal.spId);
+  h+=`<div style="position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:200;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this){hrAccessModal=null;render()}">`;
+  h+=`<div style="background:white;border-radius:16px;padding:24px;max-width:440px;width:90%;max-height:80vh;overflow-y:auto" onclick="event.stopPropagation()">`;
+  h+=`<h3 style="margin:0 0 4px;font-size:17px;font-weight:700">Manage Access</h3>`;
+  h+=`<p style="margin:0 0 16px;font-size:12px;color:#6B7280">Control who can view or edit <strong>${sp?esc(sp.name):''}\'s</strong> HR record.</p>`;
+  const staffUsers=usersList.filter(u=>['superadmin','admin','manager','staff','driver'].includes(u.role));
+  if(!staffUsers.length)h+=`<p style="color:#9CA3AF;font-size:13px">Load users first (Users tab).</p>`;
+  staffUsers.forEach(u=>{
+    if(sp&&(sp.userId===u.id||sp.name===u.username))return; // skip own profile
+    const isViewer=hrAccessModal.viewers.includes(u.id);
+    const isEditor=hrAccessModal.editors.includes(u.id);
+    h+=`<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #F3F4F6">`;
+    h+=`<div style="flex:1;font-size:13px;font-weight:600;color:#1F2937">${esc(u.username)} <span style="font-size:10px;color:#9CA3AF">${ROLE_LABELS[u.role]||u.role}</span></div>`;
+    h+=`<label style="font-size:11px;display:flex;align-items:center;gap:3px"><input type="checkbox" ${isViewer?'checked':''} onchange="toggleHrAccess(${u.id},'view')"> View</label>`;
+    h+=`<label style="font-size:11px;display:flex;align-items:center;gap:3px"><input type="checkbox" ${isEditor?'checked':''} onchange="toggleHrAccess(${u.id},'edit')"> Edit</label>`;
+    h+=`</div>`;
+  });
+  h+=`<div style="display:flex;gap:8px;margin-top:16px"><button onclick="hrAccessModal=null;render()" style="flex:1;border:1px solid #D1D5DB;background:white;border-radius:10px;padding:10px;font-size:13px;cursor:pointer">Cancel</button><button onclick="saveHrAccess()" style="flex:1;background:#6366F1;color:white;border:none;border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer">Save</button></div>`;
+  h+=`</div></div>`;
+}
 
 h+=`<div class="toast ${toastMsg?'visible':''}">${esc(toastMsg)}</div>`;
 document.getElementById('app').innerHTML=h;
