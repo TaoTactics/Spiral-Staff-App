@@ -15,10 +15,10 @@ Stack: **Node.js / Express 4 / SQLite** backend + **single-file vanilla JS** fro
 
 | Path | Purpose |
 |---|---|
-| `server.js` | Express server — all API routes, auth, file uploads |
+| `server.js` | Express server — all API routes, auth, file uploads, data-loss guards |
 | `index.html` | Thin HTML shell — links to `public/app.css` and `public/app.js` |
 | `public/app.css` | All styles |
-| `public/app.js` | All frontend JavaScript |
+| `public/app.js` | All frontend JavaScript (includes HR system, staff profiles, rota) |
 | `spiral-data.db` | SQLite database (WAL mode) — never edit directly while server is running |
 | `uploads/` | Uploaded files — not served statically; requires auth via `/api/files/:id/download` |
 | `backup-template.js` | Generates the self-contained offline backup HTML |
@@ -48,6 +48,18 @@ pm2 status                    # health check
 curl localhost:3000/api/health # liveness
 ```
 
+**Test server** (git worktree on `dev` branch)
+```bash
+pm2 restart spiral-test       # deploy test changes
+pm2 logs spiral-test          # test server logs
+curl localhost:3001/api/health # test liveness
+```
+- Location: `/var/www/spiral-tracker-test` (git worktree, `dev` branch)
+- Port: 3001, database: `spiral-test.db`
+- Ecosystem config: `/var/www/spiral-tracker-test/ecosystem.config.js`
+- No TLS/HSTS (accessed over plain HTTP for testing)
+- Workflow: make changes on `dev`, test at `:3001`, merge to `main`, restart production
+
 ---
 
 ## Tests, lint, build
@@ -62,7 +74,7 @@ None. After changes:
 ## Coding conventions
 
 - **Backend**: synchronous `better-sqlite3` (no async/await for DB). Follow existing route patterns.
-- **Frontend**: all state in globals — `D`, `staff`, `serviceUsers`, `schedule`, `staffProfiles`, `rota`, `driverRota`, `weekSchedules`, `registers`, `fossData`, `history`. Mutations need `save()` then usually `render()`.
+- **Frontend**: all state in globals — `D`, `staff`, `serviceUsers`, `schedule`, `staffProfiles`, `rota`, `driverRota`, `weekSchedules`, `registers`, `fossData`, `history`, `hrAccess`, `incidents`, `minibusAllocation`. Mutations need `save()` then usually `render()`. `save()` will not push to server until `serverDataLoaded` is true (prevents stale-browser overwrites).
 - **App data**: serialised as one JSON blob in `app_data` (id=1). Add new fields inside the blob; do not create new SQLite tables for app state.
 - **Frontend files**: edit `public/app.css` for styles, `public/app.js` for logic. `index.html` is just the shell — don't put CSS or JS back into it. No bundler, no framework.
 - **Style**: smallest safe change. Don't refactor unrelated code or add comments to untouched lines.
@@ -77,9 +89,14 @@ None. After changes:
 - **Public frontend bundle** (`index.html`, `public/app.js`, `public/app.css`) — never embed real service-user PII/medical seed data here. Sensitive records must come from authenticated server data or explicit imports only.
 - **Helmet / CSP** — `scriptSrc` is `'self'` only (JS lives in `public/app.js`). `scriptSrcAttr` is `'unsafe-inline'` — required because app.js builds all UI via innerHTML with inline `onclick`/`onchange` handlers. Do not remove either directive.
 - **`loginLimiter`** — rate-limits Basic Auth attempts. Do not remove.
+- **Data-loss guard** in `POST /api/data` — rejects saves that would drop >50% of service users, wipe all departments, or wipe all schedule entries. Returns HTTP 409. Do not weaken or remove without a replacement safeguard.
+- **`serverDataLoaded` flag** in `public/app.js` — `save()` won't push to the server until data has been successfully loaded from the server at least once. Prevents stale/empty browser state from overwriting the database on page load failures.
+- **`resetAll()`** — requires superadmin role and typing "RESET" to confirm. Do not lower this bar.
 - **Backup window** — currently 50 rolling backups. Reducing it silently deletes recovery points.
 - **Global state variable names** in `public/app.js` — load-bearing; rename only with a full find-and-replace.
 - **`DEF_*` arrays** near the top of `public/app.js` — seed data for fresh installs.
+- **`staffProfiles` sub-objects** — `personal`, `employment`, `qualifications`, `capabilities`, `compliance`, `health`, `documents`. Backfilled with `|| {}` / `|| []` defaults in `applyData()` for backward compat.
+- **`hrAccess`** — per-record access control for staff HR data. Managed by superadmin. Stored in the JSON blob.
 - **Nightly backup cron** — runs at 22:00 daily via `scripts/nightly-backup.sh`. Uploads to Google Drive (`gdrive:SpiralBackups/`). Do not remove without providing an alternative.
 
 ---
