@@ -137,9 +137,10 @@ app.use(helmet({
       // script-src-attr must allow unsafe-inline for those to work.
       // script-src remains 'self' only, so external script injection is still blocked.
       scriptSrcAttr: ["'unsafe-inline'"],
+      upgradeInsecureRequests: null,
     }
   },
-  hsts: { maxAge: 31536000, includeSubDomains: true },
+  hsts: false,
 }));
 
 // Serve frontend assets (CSS, JS) — public/ contains no secrets
@@ -258,10 +259,42 @@ app.get('/api/data', auth, (req, res) => {
   }
 });
 
-// Save all data
+// Save all data — with data-loss protection
 app.post('/api/data', auth, (req, res) => {
   try {
-    const jsonStr = JSON.stringify(req.body.data);
+    const incoming = req.body.data;
+    if (!incoming || typeof incoming !== 'object') {
+      return res.status(400).json({ error: 'Invalid data payload' });
+    }
+
+    // Data-loss guard: if the DB already has substantial data, reject saves that would wipe it
+    const existing = db.prepare('SELECT data FROM app_data WHERE id = 1').get();
+    if (existing) {
+      const current = JSON.parse(existing.data);
+      const curSU = (current.serviceUsers || []).length;
+      const curDepts = (current.departments || []).length;
+      const curSched = (current.schedule || []).length;
+      const incSU = (incoming.serviceUsers || []).length;
+      const incDepts = (incoming.departments || []).length;
+      const incSched = (incoming.schedule || []).length;
+
+      // Block if incoming data drops >50% of records across key collections
+      // (protects against empty saves, resets, and stale-browser overwrites)
+      if (curSU > 5 && incSU < curSU * 0.5) {
+        console.warn(`DATA GUARD: blocked save — serviceUsers would drop from ${curSU} to ${incSU} (user: ${req.user.username})`);
+        return res.status(409).json({ error: 'Save rejected: would delete too many service user records. Use admin restore if intentional.' });
+      }
+      if (curDepts > 2 && incDepts === 0) {
+        console.warn(`DATA GUARD: blocked save — departments would be wiped (user: ${req.user.username})`);
+        return res.status(409).json({ error: 'Save rejected: would delete all departments.' });
+      }
+      if (curSched > 5 && incSched === 0) {
+        console.warn(`DATA GUARD: blocked save — schedule would be wiped (user: ${req.user.username})`);
+        return res.status(409).json({ error: 'Save rejected: would delete all schedule entries.' });
+      }
+    }
+
+    const jsonStr = JSON.stringify(incoming);
 
     // Upsert main data
     db.prepare(`

@@ -357,6 +357,7 @@ return s;
 
 // Server API
 let serverMode=false; // true if running on server
+let serverDataLoaded=false; // true once we've loaded from server — prevents stale saves
 let saveDebounce=null;
 
 function getDataObj(){return {departments:D,staff,history,schedule,serviceUsers,staffProfiles,rota,driverRota,weekSchedules,registers,fossData,incidents,minibusAllocation,hrAccess}}
@@ -428,12 +429,14 @@ if(!r.ok)throw 0;
 const json=await r.json();
 if(json.data&&json.data.departments){
 applyData(json.data);
+serverDataLoaded=true;
 saveToLS();
 render();
 return true;
 }
 // No data on server yet — load from localStorage and push up
 loadFromLS();
+serverDataLoaded=true;
 await saveToServer();
 render();
 showToast('Migrated local data to server');
@@ -444,7 +447,7 @@ return true;
 function save(){
 staff=staffProfiles.map(p=>p.name);
 saveToLS();
-if(serverMode){
+if(serverMode&&serverDataLoaded){
 clearTimeout(saveDebounce);
 saveDebounce=setTimeout(()=>saveToServer(),800);
 }
@@ -463,6 +466,7 @@ headers:{'Content-Type':'application/json'},
 credentials:'include',
 body:JSON.stringify({data:getDataObj()})
 });
+if(r.status===409){const d=await r.json();console.warn('DATA GUARD:',d.error);showToast('⚠️ Save blocked: data loss prevented. Reloading...');setTimeout(()=>location.reload(),2000);return}
 if(!r.ok)throw new Error('Status '+r.status);
 const syncDot=document.querySelector('.sync-server-dot');
 if(syncDot){syncDot.style.background='#22C55E';setTimeout(()=>{syncDot.style.background='#D1D5DB'},1500)}
@@ -906,7 +910,7 @@ function takeSnapshot(){const overall=pct(D.reduce((a,d)=>a+d.tasks.filter(t=>t.
 function copyAppsScript(){navigator.clipboard.writeText(APPS_SCRIPT_CODE).then(()=>showToast('Copied!'))}
 function copyForSheets(){const rows=[['Department','Task','Priority','Assignee','Status','Notes']];D.forEach(d=>d.tasks.forEach(t=>rows.push([d.name,t.text,t.priority,t.assignee||'',t.done?'Done':'To Do',(t.notes||[]).map(n=>n.text).join('; ')])));navigator.clipboard.writeText(rows.map(r=>r.join('\t')).join('\n')).then(()=>showToast('Copied!'))}
 function downloadCSV(){const rows=[['Department','Task','Priority','Assignee','Status']];D.forEach(d=>d.tasks.forEach(t=>rows.push([d.name,t.text,t.priority,t.assignee||'',t.done?'Done':'To Do'])));const csv=rows.map(r=>r.map(c=>'"'+c.replace(/"/g,'""')+'"').join(',')).join('\n');const b=new Blob([csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='spiral-tasks.csv';a.click();showToast('Downloaded')}
-function resetAll(){if(!confirm('Reset everything?'))return;D=JSON.parse(JSON.stringify(DEFS.departments));history=[];schedule=JSON.parse(JSON.stringify(DEF_SCHEDULE));serviceUsers=JSON.parse(JSON.stringify(DEF_SUS));rota={};driverRota={};weekSchedules={};registers={};fossData={departments:[],staffProfiles:[],contacts:[],completedLog:[]};openD={};filterPri='all';filterStaff='all';save();render();showToast('Reset')}
+function resetAll(){if(!isSuperAdmin()){showToast('Superadmin only');return}if(!confirm('⚠️ This will DELETE all departments, tasks, schedule, service users, rotas, and registers. This cannot be undone. Are you sure?'))return;if(prompt('Type RESET to confirm:')!=='RESET')return;D=JSON.parse(JSON.stringify(DEFS.departments));history=[];schedule=JSON.parse(JSON.stringify(DEF_SCHEDULE));serviceUsers=JSON.parse(JSON.stringify(DEF_SUS));rota={};driverRota={};weekSchedules={};registers={};fossData={departments:[],staffProfiles:[],contacts:[],completedLog:[]};openD={};filterPri='all';filterStaff='all';save();render();showToast('Reset')}
 
 // Staff profile helpers
 function getStaffProfile(name){return staffProfiles.find(p=>p.name===name)}
@@ -1252,7 +1256,7 @@ h+=`</div>`});
 if(isA){h+=`<div class="atf"><div class="atf-r"><input type="text" id="atf-t-${dept.id}" placeholder="New task..." onkeydown="if(event.key==='Enter')addTask('${dept.id}');if(event.key==='Escape'){addingTo=null;render()}"></div><div class="atf-r"><select id="atf-p-${dept.id}"><option value="high">🔴 High</option><option value="med" selected>🟡 Med</option><option value="low">🔵 Low</option></select><select id="atf-s-${dept.id}"><option value="">Unassigned</option>${staff.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select></div><button class="atf-sub" style="background:${dept.color}" onclick="addTask('${dept.id}')">Add Task</button></div>`}
 else{h+=`<div class="arow"><button class="abtn" onclick="addingTo='${dept.id}';render();setTimeout(()=>{const el=document.getElementById('atf-t-${dept.id}');if(el)el.focus()},50)">+ Task</button><button class="msbtn" onclick="msForm='${dept.id}';render()">🏁</button><button class="dbtn" onclick="deleteDept('${dept.id}')">Del</button></div>`}
 h+=`</div></div></div>`});
-h+=`<button class="add-dept" onclick="activeModal='addDept';render()">+ Add Department</button><button class="rst" onclick="resetAll()">Reset to defaults</button><p class="foot">${serverMode?'<span style="color:#22C55E">●</span> Server mode — data shared':'<span style="color:#F59E0B">●</span> Local mode — browser only'}</p></div>`}
+h+=`<button class="add-dept" onclick="activeModal='addDept';render()">+ Add Department</button>${isSuperAdmin()?'<button class="rst" onclick="resetAll()">Reset to defaults</button>':''}<p class="foot">${serverMode?'<span style="color:#22C55E">●</span> Server mode — data shared':'<span style="color:#F59E0B">●</span> Local mode — browser only'}</p></div>`}
 
 // ===== SERVICE USERS PAGE =====
 if(view==='sus'){
