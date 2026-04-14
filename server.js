@@ -139,7 +139,6 @@ app.use(helmet({
       scriptSrcAttr: ["'unsafe-inline'"],
     }
   },
-  hsts: { maxAge: 31536000, includeSubDomains: true },
 }));
 
 // Serve frontend assets (CSS, JS) — public/ contains no secrets
@@ -258,7 +257,7 @@ app.get('/api/data', auth, (req, res) => {
   }
 });
 
-// Save all data
+// Save all data — with data-loss protection
 app.post('/api/data', auth, (req, res) => {
   try {
     const incoming = req.body.data;
@@ -277,6 +276,8 @@ app.post('/api/data', auth, (req, res) => {
       const incDepts = (incoming.departments || []).length;
       const incSched = (incoming.schedule || []).length;
 
+      // Block if incoming data drops >50% of records across key collections
+      // (protects against empty saves, resets, and stale-browser overwrites)
       if (curSU > 5 && incSU < curSU * 0.5) {
         console.warn(`DATA GUARD: blocked save — serviceUsers would drop from ${curSU} to ${incSU} (user: ${req.user.username})`);
         return res.status(409).json({ error: 'Save rejected: would delete too many service user records. Use admin restore if intentional.' });
