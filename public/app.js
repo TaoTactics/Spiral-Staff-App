@@ -126,6 +126,7 @@ let hrAccess={};
 let viewingStaffId=null,staffDetailTab='personal',staffListSearch='';
 
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
+function pwEye(){return '<span class="pw-eye" onclick="const i=this.parentElement.querySelector(\'input\');if(i.type===\'password\'){i.type=\'text\';this.textContent=\'🙈\'}else{i.type=\'password\';this.textContent=\'👁\'}">👁</span>'}
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
 function pct(a,b){return b>0?Math.round(a/b*100):0}
 function initials(u){if(!u)return '?';return u.username.slice(0,2).toUpperCase()}
@@ -2247,7 +2248,7 @@ if(isEditing&&canEdit){
 row+=`<div style="display:flex;flex-direction:column;gap:8px">`;
 row+=`<div style="display:flex;gap:8px;align-items:center"><label style="font-size:11px;font-weight:700;color:#6B7280;min-width:80px">Username</label><input id="eu-un-${u.id}" value="${esc(u.username)}" style="flex:1;border:1px solid #D1D5DB;border-radius:8px;padding:6px 10px;font-size:13px"></div>`;
 row+=`<div style="display:flex;gap:8px;align-items:center"><label style="font-size:11px;font-weight:700;color:#6B7280;min-width:80px">Role</label><select id="eu-role-${u.id}" style="flex:1;border:1px solid #D1D5DB;border-radius:8px;padding:6px 10px;font-size:13px">${roleOpts.map(r=>`<option value="${r}" ${u.role===r?'selected':''}>${ROLE_LABELS[r]||r}</option>`).join('')}</select></div>`;
-row+=`<div style="display:flex;gap:8px;align-items:center"><label style="font-size:11px;font-weight:700;color:#6B7280;min-width:80px">New PW</label><input type="password" placeholder="Leave blank to keep" oninput="if(!editingUserPw)editingUserPw={};editingUserPw.pw=this.value" style="flex:1;border:1px solid #D1D5DB;border-radius:8px;padding:6px 10px;font-size:13px"></div>`;
+row+=`<div style="display:flex;gap:8px;align-items:center"><label style="font-size:11px;font-weight:700;color:#6B7280;min-width:80px">New PW</label><div class="pw-wrap" style="flex:1"><input type="password" placeholder="Leave blank to keep" oninput="if(!editingUserPw)editingUserPw={};editingUserPw.pw=this.value" style="width:100%;border:1px solid #D1D5DB;border-radius:8px;padding:6px 10px;font-size:13px;box-sizing:border-box">${pwEye()}</div></div>`;
 row+=`<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px"><button onclick="editingUserId=null;editingUserPw=null;render()" style="border:1px solid #D1D5DB;background:white;border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer">Cancel</button><button onclick="saveEditUser()" style="background:#6366F1;color:white;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">Save</button></div>`;
 row+=`</div>`;
 }else{
@@ -2285,7 +2286,7 @@ h+=`<div style="position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:200;di
 h+=`<h3 style="margin:0 0 16px;font-size:17px;font-weight:700">Create New User</h3>`;
 h+=`<div style="display:flex;flex-direction:column;gap:12px">`;
 h+=`<div><label style="font-size:11px;font-weight:700;color:#6B7280;display:block;margin-bottom:4px">Username</label><input value="${esc(nf.username)}" oninput="newUserForm.username=this.value" style="width:100%;box-sizing:border-box;border:1px solid #D1D5DB;border-radius:8px;padding:8px 12px;font-size:14px"></div>`;
-h+=`<div><label style="font-size:11px;font-weight:700;color:#6B7280;display:block;margin-bottom:4px">Password</label><input type="password" oninput="newUserForm.password=this.value" style="width:100%;box-sizing:border-box;border:1px solid #D1D5DB;border-radius:8px;padding:8px 12px;font-size:14px"></div>`;
+h+=`<div><label style="font-size:11px;font-weight:700;color:#6B7280;display:block;margin-bottom:4px">Password</label><div class="pw-wrap"><input type="password" oninput="newUserForm.password=this.value" style="width:100%;box-sizing:border-box;border:1px solid #D1D5DB;border-radius:8px;padding:8px 12px;font-size:14px">${pwEye()}</div></div>`;
 h+=`<div><label style="font-size:11px;font-weight:700;color:#6B7280;display:block;margin-bottom:4px">Role</label><select onchange="newUserForm.role=this.value" style="width:100%;box-sizing:border-box;border:1px solid #D1D5DB;border-radius:8px;padding:8px 12px;font-size:14px">${roleOpts.map(r=>`<option value="${r}" ${nf.role===r?'selected':''}>${ROLE_LABELS[r]||r}</option>`).join('')}</select></div>`;
 h+=`<div style="display:flex;gap:8px;margin-top:4px"><button onclick="newUserForm=null;render()" style="flex:1;border:1px solid #D1D5DB;background:white;border-radius:10px;padding:10px;font-size:14px;cursor:pointer">Cancel</button><button onclick="createUser()" style="flex:1;background:#6366F1;color:white;border:none;border-radius:10px;padding:10px;font-size:14px;font-weight:700;cursor:pointer">Create</button></div>`;
 h+=`</div></div></div>`;
@@ -2506,9 +2507,9 @@ if(activeModal==='account'&&currentUser){
   } else {
     h+=`<div style="background:#F9FAFB;border-radius:12px;padding:14px;margin-top:6px;display:flex;flex-direction:column;gap:10px">`;
     h+=`<div style="font-size:13px;font-weight:700;color:#1F2937;margin-bottom:2px">Change Password</div>`;
-    h+=`<div><label class="mlbl">Current Password</label><input class="minp" type="password" value="${esc(pf.current)}" placeholder="Current password" oninput="accountPwForm.current=this.value"></div>`;
-    h+=`<div><label class="mlbl">New Password</label><input class="minp" type="password" value="${esc(pf.newPw)}" placeholder="New password (min 6 chars)" oninput="accountPwForm.newPw=this.value"></div>`;
-    h+=`<div><label class="mlbl">Confirm New Password</label><input class="minp" type="password" value="${esc(pf.confirm)}" placeholder="Confirm new password" oninput="accountPwForm.confirm=this.value"></div>`;
+    h+=`<div><label class="mlbl">Current Password</label><div class="pw-wrap"><input class="minp" type="password" value="${esc(pf.current)}" placeholder="Current password" oninput="accountPwForm.current=this.value">${pwEye()}</div></div>`;
+    h+=`<div><label class="mlbl">New Password</label><div class="pw-wrap"><input class="minp" type="password" value="${esc(pf.newPw)}" placeholder="New password (min 6 chars)" oninput="accountPwForm.newPw=this.value">${pwEye()}</div></div>`;
+    h+=`<div><label class="mlbl">Confirm New Password</label><div class="pw-wrap"><input class="minp" type="password" value="${esc(pf.confirm)}" placeholder="Confirm new password" oninput="accountPwForm.confirm=this.value">${pwEye()}</div></div>`;
     if(pf.error)h+=`<div style="color:#EF4444;font-size:12px;font-weight:500">${esc(pf.error)}</div>`;
     h+=`<div style="display:flex;gap:8px"><button class="mbtn dark" style="flex:1" ${pf.saving?'disabled':''} onclick="changePassword()">${pf.saving?'Saving…':'Save Password'}</button><button class="mbtn outline" style="flex:1" onclick="accountPwForm=null;render()">Cancel</button></div>`;
     h+=`</div>`;
