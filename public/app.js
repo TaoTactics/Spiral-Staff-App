@@ -118,12 +118,26 @@ let suPageSearch='',suPageFlags=[],suPageSort='name',suAttView=false;
 let staffProfiles=[],rota={},driverRota={},editingStaffId=null,rotaEditCell=null,driverEditCell=null;
 let rotaWeekOffset=0,rotaSubTab='rooms';
 let minibusAllocation={};
-let minibusView='day';
+let minibuses=[];
+let mbSubTab='planner';
+let fleetViewId=null;
+let addingVehicle=false;
+let addingFleetLog=null;
+let editingVehicleId=null;
+let minibusAmPm='all';
 let minibusDay='mon';
-let minibusRoute=null;
 let minibusWeekOffset=0;
 let hrAccess={};
 let viewingStaffId=null,staffDetailTab='personal',staffListSearch='';
+let spending={pettyCash:{balance:0,topUps:[],transactions:[]},receipts:[]};
+let spendingView='receipts',spendingFilter='all',addingReceipt=null,addingPettyCash=null,viewingReceipt=null;
+let spendDropdown=null; // tracks which multi-select dropdown is open: 'pcStaff','pcClient', etc.
+const SPEND_CATS_DEFAULT=['Media','Good Life','Client Lunches','Parties','Outings','Sunday Club','Saturday Club','Thursday Club','Jets','Tuesday Club','Cleaning','Food','Art Supplies','Transport','Volunteer Expenses','Cooking','Office','Fuel','Bank','Holidays','Staff','Other'];
+const PAY_SOURCES=['Petty Cash','Staff (reimburse)','Company Card/Online','Other'];
+function getSpendCats(){return [...SPEND_CATS_DEFAULT,...(spending.customCategories||[])]}
+function getVendors(){return [...(spending.customVendors||[])]}
+function rememberCategory(val){if(!val||SPEND_CATS_DEFAULT.includes(val))return;if(!spending.customCategories)spending.customCategories=[];if(!spending.customCategories.includes(val)){spending.customCategories.push(val);save()}}
+function rememberVendor(val){if(!val)return;if(!spending.customVendors)spending.customVendors=[];if(!spending.customVendors.includes(val)){spending.customVendors.push(val);save()}}
 
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
 function pwEye(){return '<span class="pw-eye" onclick="const i=this.parentElement.querySelector(\'input\');if(i.type===\'password\'){i.type=\'text\';this.textContent=\'🙈\'}else{i.type=\'password\';this.textContent=\'👁\'}">👁</span>'}
@@ -361,7 +375,7 @@ let serverMode=false; // true if running on server
 let serverDataLoaded=false; // true once we've loaded from server — prevents stale saves
 let saveDebounce=null;
 
-function getDataObj(){return {departments:D,staff,history,schedule,serviceUsers,staffProfiles,rota,driverRota,weekSchedules,registers,fossData,incidents,minibusAllocation,hrAccess}}
+function getDataObj(){return {departments:D,staff,history,schedule,serviceUsers,staffProfiles,rota,driverRota,weekSchedules,registers,fossData,incidents,minibusAllocation,minibuses,hrAccess,spending}}
 
 function load(){
 // Detect if we're on the server (not file:// or github.io)
@@ -398,9 +412,10 @@ weekSchedules=d.weekSchedules||{};
 registers=d.registers||{};
 fossData=d.fossData||{departments:[],staffProfiles:[],contacts:[],completedLog:[]};
 hrAccess=d.hrAccess||{};
+spending=d.spending||{pettyCash:{balance:0,topUps:[],transactions:[]},receipts:[]};
 saveToLS();return;
 }
-D=JSON.parse(JSON.stringify(DEFS.departments));staff=[...DEFS.staff];history=[];schedule=JSON.parse(JSON.stringify(DEF_SCHEDULE));serviceUsers=JSON.parse(JSON.stringify(DEF_SUS));staffProfiles=JSON.parse(JSON.stringify(DEF_STAFF_PROFILES));rota={};driverRota={};weekSchedules={};registers={};fossData={departments:[],staffProfiles:[],contacts:[],completedLog:[]};hrAccess={};
+D=JSON.parse(JSON.stringify(DEFS.departments));staff=[...DEFS.staff];history=[];schedule=JSON.parse(JSON.stringify(DEF_SCHEDULE));serviceUsers=JSON.parse(JSON.stringify(DEF_SUS));staffProfiles=JSON.parse(JSON.stringify(DEF_STAFF_PROFILES));rota={};driverRota={};weekSchedules={};registers={};fossData={departments:[],staffProfiles:[],contacts:[],completedLog:[]};hrAccess={};spending={pettyCash:{balance:0,topUps:[],transactions:[]},receipts:[]};minibuses=[];
 }
 
 function applyData(d){
@@ -418,7 +433,13 @@ registers=d.registers||{};
 fossData=d.fossData||{departments:[],staffProfiles:[],contacts:[],completedLog:[]};
 incidents=d.incidents||[];
 minibusAllocation=d.minibusAllocation||{};
+minibuses=d.minibuses||[];
 hrAccess=d.hrAccess||{};
+spending=d.spending||{pettyCash:{balance:0,topUps:[],transactions:[]},receipts:[]};
+if(!spending.pettyCash)spending.pettyCash={balance:0,topUps:[],transactions:[]};
+if(!spending.pettyCash.topUps)spending.pettyCash.topUps=[];
+if(!spending.pettyCash.transactions)spending.pettyCash.transactions=[];
+if(!spending.receipts)spending.receipts=[];
 staff=staffProfiles.map(p=>p.name);
 }
 
@@ -690,6 +711,16 @@ await fetch(syncCfg.url,{method:'POST',mode:'no-cors',headers:{'Content-Type':'t
 showToast('Incidents pushed ✓');
 }catch{showToast('Push failed')}
 }
+// ====== SPENDING / PETTY CASH ======
+function calcPettyBalance(){const tops=(spending.pettyCash.topUps||[]).reduce((s,t)=>s+Number(t.amount||0),0);const spends=(spending.pettyCash.transactions||[]).reduce((s,t)=>s+Number(t.amount||0),0);return tops-spends}
+function addReceipt(){if(!addingReceipt||!addingReceipt.amount)return;rememberCategory(addingReceipt.category);rememberVendor(addingReceipt.vendor);const r=Object.assign({},addingReceipt,{id:uid(),createdAt:new Date().toISOString(),addedBy:currentUser?.username||'',reimbursed:false});if(r.source==='Petty Cash'){spending.pettyCash.transactions.push({id:uid(),date:r.date||today(),amount:Number(r.amount),description:(r.vendor||'Receipt')+' — '+( r.description||''),category:r.category||'Other',receiptId:r.id,addedBy:currentUser?.username||''});r.reimbursed=true}spending.receipts.unshift(r);addingReceipt=null;save();render();showToast(r.source==='Petty Cash'?'Receipt added — petty cash deducted':'Receipt added')}
+function removeReceipt(id){if(!confirm('Delete this receipt?'))return;const rc=spending.receipts.find(r=>r.id===id);if(rc&&rc.source==='Petty Cash'){spending.pettyCash.transactions=spending.pettyCash.transactions.filter(t=>t.receiptId!==id)}spending.receipts=spending.receipts.filter(r=>r.id!==id);viewingReceipt=null;save();render();showToast('Deleted')}
+function reimburseReceipt(id){const rc=spending.receipts.find(r=>r.id===id);if(!rc||rc.reimbursed)return;const bal=calcPettyBalance();if(Number(rc.amount)>bal){if(!confirm(`Petty cash balance is £${bal.toFixed(2)} but receipt is £${Number(rc.amount).toFixed(2)}. Reimburse anyway?`))return}spending.pettyCash.transactions.push({id:uid(),date:today(),amount:Number(rc.amount),description:'Reimburse: '+(rc.vendor||'')+(rc.paidBy?' to '+rc.paidBy:''),category:'Petty Cash',receiptId:rc.id,addedBy:currentUser?.username||''});rc.reimbursed=true;rc.reimbursedDate=today();rc.reimbursedBy=currentUser?.username||'';save();render();showToast('Reimbursed from petty cash')}
+function addPettyTransaction(){if(!addingPettyCash)return;const cashIn=Number(addingPettyCash.cashIn||0);const cashOut=Number(addingPettyCash.cashOut||0);if(!cashIn&&!cashOut)return;rememberCategory(addingPettyCash.category);const entry={id:uid(),date:addingPettyCash.date||today(),cashIn,cashOut,category:addingPettyCash.category||'Other',description:addingPettyCash.description||'',staffInvolved:addingPettyCash.staffInvolved||[],clientsInvolved:addingPettyCash.clientsInvolved||[],invoiceNo:addingPettyCash.invoiceNo||'',transactionNo:addingPettyCash.transactionNo||'',addedBy:currentUser?.username||''};if(cashIn>0)spending.pettyCash.topUps.push({id:entry.id,date:entry.date,amount:cashIn,note:entry.description,category:entry.category,staffInvolved:entry.staffInvolved,clientsInvolved:entry.clientsInvolved,invoiceNo:entry.invoiceNo,transactionNo:entry.transactionNo,addedBy:entry.addedBy});if(cashOut>0)spending.pettyCash.transactions.push({id:entry.id,date:entry.date,amount:cashOut,description:entry.description,category:entry.category,staffInvolved:entry.staffInvolved,clientsInvolved:entry.clientsInvolved,invoiceNo:entry.invoiceNo,transactionNo:entry.transactionNo,addedBy:entry.addedBy});addingPettyCash=null;save();render();showToast(cashIn>0&&cashOut>0?'Cash in & out recorded':cashIn>0?'Cash in recorded':'Cash out recorded')}
+function removePettyEntry(type,id){if(!confirm('Delete this entry?'))return;if(type==='topUp')spending.pettyCash.topUps=spending.pettyCash.topUps.filter(t=>t.id!==id);else spending.pettyCash.transactions=spending.pettyCash.transactions.filter(t=>t.id!==id);save();render();showToast('Deleted')}
+function togglePettyStaff(name){if(!addingPettyCash)return;if(!addingPettyCash.staffInvolved)addingPettyCash.staffInvolved=[];const idx=addingPettyCash.staffInvolved.indexOf(name);if(idx>=0)addingPettyCash.staffInvolved.splice(idx,1);else addingPettyCash.staffInvolved.push(name);render()}
+function togglePettyClient(name){if(!addingPettyCash)return;if(!addingPettyCash.clientsInvolved)addingPettyCash.clientsInvolved=[];const idx=addingPettyCash.clientsInvolved.indexOf(name);if(idx>=0)addingPettyCash.clientsInvolved.splice(idx,1);else addingPettyCash.clientsInvolved.push(name);render()}
+function getMonthlySpending(){const now=new Date();const m=now.getMonth(),y=now.getFullYear();return spending.receipts.filter(r=>{const d=new Date(r.date);return d.getMonth()===m&&d.getFullYear()===y}).reduce((s,r)=>s+Number(r.amount||0),0)}
 // ====== USER MANAGEMENT ======
 const ROLE_LABELS={superadmin:'Superadmin',manager:'Manager',staff:'Staff',driver:'Driver',serviceuser:'Service User',carer:'Carer',foss:'FOSS'};
 const ROLE_COLORS={superadmin:'#7C3AED',manager:'#2563EB',staff:'#059669',driver:'#D97706',serviceuser:'#DB2777',carer:'#0891B2',foss:'#10B981'};
@@ -837,7 +868,8 @@ function toggleHrAccess(userId,level){
 function canSeeTab(tab){
   const r=currentUser?.role||'staff';
   if(tab==='usersTab') return isManagerOrAbove();
-  if(['rotaTab','dash','hist','incidentsTab'].includes(tab)) return isManagerOrAbove();
+  if(['calTab','dash','hist'].includes(tab)) return isSuperAdmin();
+  if(['rotaTab','incidentsTab','spendingTab'].includes(tab)) return isManagerOrAbove();
   if(tab==='staffTab') return true;
   return true;
 }
@@ -995,6 +1027,45 @@ function prePopulateMbDay(wk,day){
   });
 }
 
+// Fleet helpers
+function getActiveFleet(){return minibuses.filter(m=>m.active!==false)}
+function fleetLabel(v){return v.reg?(v.name&&v.name!==v.reg?`${v.reg} — ${v.name}`:v.reg):v.name}
+function fleetDropdownOpts(selected){
+  const fleet=getActiveFleet();
+  let opts=`<option value="">— None —</option>`;
+  if(fleet.length){
+    fleet.forEach(v=>{const lbl=fleetLabel(v);opts+=`<option value="${esc(lbl)}" ${selected===lbl?'selected':''}>${esc(lbl)}</option>`});
+  } else {
+    MINIBUSES.forEach(mb=>{opts+=`<option value="${esc(mb)}" ${selected===mb?'selected':''}>${esc(mb)}</option>`});
+  }
+  return opts;
+}
+function addFleetLogEntry(vid,entry){
+  const v=minibuses.find(m=>m.id===vid);if(!v)return;
+  if(!v.log)v.log=[];
+  v.log.unshift({id:'log_'+Date.now(),date:entry.date||todayStr(),type:entry.type||'other',mileage:entry.mileage||null,description:entry.description||'',cost:entry.cost||null,expiryDate:entry.expiryDate||null});
+  save();render();
+}
+function deleteFleetLog(vid,lid){
+  const v=minibuses.find(m=>m.id===vid);if(!v)return;
+  v.log=(v.log||[]).filter(e=>e.id!==lid);save();render();
+}
+function deleteVehicle(vid){
+  minibuses=minibuses.filter(m=>m.id!==vid);fleetViewId=null;save();render();
+}
+function todayStr(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function fleetAlerts(v){
+  const alerts=[];const today=new Date();today.setHours(0,0,0,0);
+  ['mot','tax','insurance'].forEach(type=>{
+    const recent=(v.log||[]).filter(e=>e.type===type&&e.expiryDate).sort((a,b)=>b.date.localeCompare(a.date))[0];
+    if(!recent)return;
+    const exp=new Date(recent.expiryDate);exp.setHours(0,0,0,0);
+    const days=Math.round((exp-today)/(1000*60*60*24));
+    if(days<=60){const lbl={mot:'MOT',tax:'Road Tax',insurance:'Insurance'}[type];alerts.push({type:lbl,days,exp:recent.expiryDate})}
+  });
+  return alerts;
+}
+
 function render(){
 let h='';
 const isF=filterPri!=='all'||filterStaff!=='all';
@@ -1015,7 +1086,7 @@ if(appMode==='spiral'&&view==='depts'){h+=`<div class="ov-box"><div class="ov-ro
 
 // Tabs
 if(appMode==='spiral'){
-h+=`<div class="tabs" role="tablist" aria-label="Main navigation"><button class="tab ${view==='depts'?'on':''}" role="tab" aria-selected="${view==='depts'}" onclick="view='depts';render()">📋 Tasks</button><button class="tab ${view==='sched'?'on':''}" role="tab" aria-selected="${view==='sched'}" onclick="view='sched';render()">📅 Schedule</button><button class="tab ${view==='regTab'?'on':''}" role="tab" aria-selected="${view==='regTab'}" onclick="view='regTab';render()">📝 Register</button><button class="tab ${view==='sus'?'on':''}" role="tab" aria-selected="${view==='sus'}" onclick="view='sus';render()">👤 SUs</button>${canSeeTab('rotaTab')?`<button class="tab ${view==='rotaTab'?'on':''}" role="tab" aria-selected="${view==='rotaTab'}" onclick="view='rotaTab';render()">📊 Rota</button>`:''}${canSeeTab('dash')?`<button class="tab ${view==='dash'?'on':''}" role="tab" aria-selected="${view==='dash'}" onclick="view='dash';render()">📈 Dashboard</button>`:''}<button class="tab ${view==='calTab'?'on':''}" role="tab" aria-selected="${view==='calTab'}" onclick="view='calTab';render()">📆 Calendar</button><button class="tab ${view==='filesTab'?'on':''}" role="tab" aria-selected="${view==='filesTab'}" onclick="view='filesTab';loadFiles('spiral');render()">📁 Files</button>${canSeeTab('hist')?`<button class="tab ${view==='hist'?'on':''}" role="tab" aria-selected="${view==='hist'}" onclick="view='hist';render()">🕐 History</button>`:''}${canSeeTab('incidentsTab')?`<button class="tab ${view==='incidentsTab'?'on':''}" role="tab" aria-selected="${view==='incidentsTab'}" onclick="view='incidentsTab';render()">🚨 Incidents${incidents.filter(i=>i.status==='open').length?` <span style="background:#EF4444;color:white;border-radius:100px;padding:1px 5px;font-size:9px">${incidents.filter(i=>i.status==='open').length}</span>`:''}</button>`:''}`+`<button class="tab ${view==='minibusTab'?'on':''}" role="tab" aria-selected="${view==='minibusTab'}" onclick="view='minibusTab';render()">🚐 Minibus</button>${canSeeTab('staffTab')?`<button class="tab ${view==='staffTab'?'on':''}" role="tab" aria-selected="${view==='staffTab'}" onclick="view='staffTab';viewingStaffId=null;render()">🧑‍💼 Staff</button>`:''}${canSeeTab('usersTab')?`<button class="tab ${view==='usersTab'?'on':''}" role="tab" aria-selected="${view==='usersTab'}" onclick="view='usersTab';if(!usersList.length)loadUsers();render()">👥 Users</button>`:''}</div></div>`;
+h+=`<div class="tabs" role="tablist" aria-label="Main navigation"><button class="tab ${view==='depts'?'on':''}" role="tab" aria-selected="${view==='depts'}" onclick="view='depts';render()">📋 Tasks</button><button class="tab ${view==='sched'?'on':''}" role="tab" aria-selected="${view==='sched'}" onclick="view='sched';render()">📅 Schedule</button><button class="tab ${view==='regTab'?'on':''}" role="tab" aria-selected="${view==='regTab'}" onclick="view='regTab';render()">📝 Register</button><button class="tab ${view==='sus'?'on':''}" role="tab" aria-selected="${view==='sus'}" onclick="view='sus';render()">👤 SUs</button>${canSeeTab('rotaTab')?`<button class="tab ${view==='rotaTab'?'on':''}" role="tab" aria-selected="${view==='rotaTab'}" onclick="view='rotaTab';render()">📊 Rota</button>`:''}${canSeeTab('dash')?`<button class="tab ${view==='dash'?'on':''}" role="tab" aria-selected="${view==='dash'}" onclick="view='dash';render()">📈 Dashboard</button>`:''}${canSeeTab('calTab')?`<button class="tab ${view==='calTab'?'on':''}" role="tab" aria-selected="${view==='calTab'}" onclick="view='calTab';render()">📆 Calendar</button>`:''}<button class="tab ${view==='filesTab'?'on':''}" role="tab" aria-selected="${view==='filesTab'}" onclick="view='filesTab';loadFiles('spiral');render()">📁 Files</button>${canSeeTab('spendingTab')?`<button class="tab ${view==='spendingTab'?'on':''}" role="tab" aria-selected="${view==='spendingTab'}" onclick="view='spendingTab';render()">💷 Spending</button>`:''}${canSeeTab('hist')?`<button class="tab ${view==='hist'?'on':''}" role="tab" aria-selected="${view==='hist'}" onclick="view='hist';render()">🕐 History</button>`:''}${canSeeTab('incidentsTab')?`<button class="tab ${view==='incidentsTab'?'on':''}" role="tab" aria-selected="${view==='incidentsTab'}" onclick="view='incidentsTab';render()">🚨 Incidents${incidents.filter(i=>i.status==='open').length?` <span style="background:#EF4444;color:white;border-radius:100px;padding:1px 5px;font-size:9px">${incidents.filter(i=>i.status==='open').length}</span>`:''}</button>`:''}`+`<button class="tab ${view==='minibusTab'?'on':''}" role="tab" aria-selected="${view==='minibusTab'}" onclick="view='minibusTab';render()">🚐 Minibus</button>${canSeeTab('staffTab')?`<button class="tab ${view==='staffTab'?'on':''}" role="tab" aria-selected="${view==='staffTab'}" onclick="view='staffTab';viewingStaffId=null;render()">🧑‍💼 Staff</button>`:''}${canSeeTab('usersTab')?`<button class="tab ${view==='usersTab'?'on':''}" role="tab" aria-selected="${view==='usersTab'}" onclick="view='usersTab';if(!usersList.length)loadUsers();render()">👥 Users</button>`:''}</div></div>`;
 } else {
 h+=`<div class="tabs" role="tablist" aria-label="Main navigation"><button class="tab ${fossView==='fossTasks'?'on':''}" role="tab" aria-selected="${fossView==='fossTasks'}" onclick="fossView='fossTasks';render()">📋 Tasks</button><button class="tab ${fossView==='fossStaff'?'on':''}" role="tab" aria-selected="${fossView==='fossStaff'}" onclick="fossView='fossStaff';render()">🧑‍💼 Team</button><button class="tab ${fossView==='fossContacts'?'on':''}" role="tab" aria-selected="${fossView==='fossContacts'}" onclick="fossView='fossContacts';render()">📇 Contacts</button><button class="tab ${fossView==='fossSUs'?'on':''}" role="tab" aria-selected="${fossView==='fossSUs'}" onclick="fossView='fossSUs';render()">👤 SUs</button><button class="tab ${fossView==='fossLog'?'on':''}" role="tab" aria-selected="${fossView==='fossLog'}" onclick="fossView='fossLog';render()">✅ Log</button><button class="tab ${fossView==='fossFiles'?'on':''}" role="tab" aria-selected="${fossView==='fossFiles'}" onclick="fossView='fossFiles';loadFiles('foss');render()">📁 Files</button><button class="tab ${fossView==='fossCal'?'on':''}" role="tab" aria-selected="${fossView==='fossCal'}" onclick="fossView='fossCal';render()">📆 Calendar</button></div></div>`;
 }
@@ -1030,8 +1101,9 @@ if(mobileMenuOpen){
     h+=`<button class="mob-tab ${view==='sus'?'on':''}" onclick="view='sus';mobileMenuOpen=false;render()">👤 SUs</button>`;
     if(canSeeTab('rotaTab'))h+=`<button class="mob-tab ${view==='rotaTab'?'on':''}" onclick="view='rotaTab';mobileMenuOpen=false;render()">📊 Rota</button>`;
     if(canSeeTab('dash'))h+=`<button class="mob-tab ${view==='dash'?'on':''}" onclick="view='dash';mobileMenuOpen=false;render()">📈 Dashboard</button>`;
-    h+=`<button class="mob-tab ${view==='calTab'?'on':''}" onclick="view='calTab';mobileMenuOpen=false;render()">📆 Calendar</button>`;
+    if(canSeeTab('calTab'))h+=`<button class="mob-tab ${view==='calTab'?'on':''}" onclick="view='calTab';mobileMenuOpen=false;render()">📆 Calendar</button>`;
     h+=`<button class="mob-tab ${view==='filesTab'?'on':''}" onclick="view='filesTab';loadFiles('spiral');mobileMenuOpen=false;render()">📁 Files</button>`;
+    if(canSeeTab('spendingTab'))h+=`<button class="mob-tab ${view==='spendingTab'?'on':''}" onclick="view='spendingTab';mobileMenuOpen=false;render()">💷 Spending</button>`;
     if(canSeeTab('hist'))h+=`<button class="mob-tab ${view==='hist'?'on':''}" onclick="view='hist';mobileMenuOpen=false;render()">🕐 History</button>`;
     if(canSeeTab('incidentsTab'))h+=`<button class="mob-tab ${view==='incidentsTab'?'on':''}" onclick="view='incidentsTab';mobileMenuOpen=false;render()">🚨 Incidents</button>`;
     h+=`<button class="mob-tab ${view==='minibusTab'?'on':''}" onclick="view='minibusTab';mobileMenuOpen=false;render()">🚐 Minibus</button>`;
@@ -1575,9 +1647,7 @@ h+=`<div class="rota-edit-title">🚐 ${esc(route)} · ${DAY_NAMES[day]} ${esc(s
 h+=`<div class="driver-field"><label>Driver</label><select onchange="setDriverField('${esc(wk)}','${esc(route)}','${day}','${esc(shift)}','driver',this.value)"><option value="">— None —</option>`;
 staffProfiles.forEach(sp=>{h+=`<option value="${esc(sp.name)}" ${cell.driver===sp.name?'selected':''}>${esc(sp.name)}</option>`});
 h+=`</select></div>`;
-h+=`<div class="driver-field"><label>Minibus</label><select onchange="setDriverField('${esc(wk)}','${esc(route)}','${day}','${esc(shift)}','minibus',this.value)"><option value="">— None —</option>`;
-MINIBUSES.forEach(mb=>{h+=`<option value="${esc(mb)}" ${cell.minibus===mb?'selected':''}>${esc(mb)}</option>`});
-h+=`</select></div>`;
+h+=`<div class="driver-field"><label>Minibus</label><select onchange="setDriverField('${esc(wk)}','${esc(route)}','${day}','${esc(shift)}','minibus',this.value)">${fleetDropdownOpts(cell.minibus)}</select></div>`;
 if(cell.driver){h+=`<button onclick="clearDriverCell('${esc(wk)}','${esc(route)}','${day}','${esc(shift)}')" style="border:none;background:none;color:#EF4444;font-size:11px;font-weight:600;cursor:pointer;padding:4px 0">Clear</button>`}
 h+=`</div>`;
 }
@@ -1782,25 +1852,181 @@ h+=`</div></div></div>`;
 h+=`<button onclick="incidentForm=newIncidentObj();render()" style="width:100%;border:2px dashed #D1D5DB;border-radius:14px;padding:14px;font-size:14px;font-weight:700;color:#6B7280;cursor:pointer;background:none;margin-top:4px">🚨 New Incident Report</button>`;
 h+=`</div>`;}
 
+// ===== SPENDING TAB =====
+if(view==='spendingTab'){
+h+=`<div style="padding:12px 16px 100px">`;
+// Sub-tabs
+h+=`<div style="display:flex;gap:6px;margin-bottom:14px">`;
+h+=`<button onclick="spendingView='receipts';render()" style="flex:1;border:none;border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;background:${spendingView==='receipts'?'#1F2937':'#E5E7EB'};color:${spendingView==='receipts'?'white':'#6B7280'}">🧾 Receipts</button>`;
+h+=`<button onclick="spendingView='petty';render()" style="flex:1;border:none;border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;background:${spendingView==='petty'?'#1F2937':'#E5E7EB'};color:${spendingView==='petty'?'white':'#6B7280'}">💰 Petty Cash</button>`;
+h+=`</div>`;
+
+if(spendingView==='receipts'){
+// Stats strip
+const monthTotal=getMonthlySpending();
+const receiptCount=spending.receipts.length;
+const catCounts={};spending.receipts.forEach(r=>{catCounts[r.category||'Other']=(catCounts[r.category||'Other']||0)+1});
+const topCat=Object.entries(catCounts).sort((a,b)=>b[1]-a[1])[0];
+h+=`<div style="display:flex;gap:8px;margin-bottom:12px">`;
+h+=`<div style="flex:1;background:white;border-radius:12px;padding:10px 12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:20px;font-weight:800;color:#1F2937">£${monthTotal.toFixed(2)}</div><div style="font-size:10px;color:#6B7280;font-weight:600;text-transform:uppercase">This Month</div></div>`;
+h+=`<div style="flex:1;background:white;border-radius:12px;padding:10px 12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:20px;font-weight:800;color:#6366F1">${receiptCount}</div><div style="font-size:10px;color:#6B7280;font-weight:600;text-transform:uppercase">Receipts</div></div>`;
+h+=`<div style="flex:1;background:white;border-radius:12px;padding:10px 12px;box-shadow:0 1px 3px rgba(0,0,0,0.06);text-align:center"><div style="font-size:16px;font-weight:800;color:#10B981">${topCat?topCat[0]:'—'}</div><div style="font-size:10px;color:#6B7280;font-weight:600;text-transform:uppercase">Top Category</div></div>`;
+h+=`</div>`;
+// Filter bar
+h+=`<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">`;
+[['all','All'],['week','This Week'],['month','This Month']].forEach(([val,lbl])=>{
+h+=`<button onclick="spendingFilter='${val}';render()" style="border:none;border-radius:100px;padding:6px 14px;font-size:11px;font-weight:700;cursor:pointer;background:${spendingFilter===val?'#1F2937':'#E5E7EB'};color:${spendingFilter===val?'white':'#6B7280'}">${lbl}</button>`;
+});
+h+=`</div>`;
+// Filter receipts
+let filteredR=[...spending.receipts].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+if(spendingFilter==='week'){const wk=new Date();wk.setDate(wk.getDate()-7);filteredR=filteredR.filter(r=>new Date(r.date)>=wk)}
+if(spendingFilter==='month'){const now=new Date();filteredR=filteredR.filter(r=>{const d=new Date(r.date);return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear()})}
+
+// Viewing single receipt
+if(viewingReceipt){
+const rc=spending.receipts.find(r=>r.id===viewingReceipt);
+if(rc){
+h+=`<div style="background:white;border-radius:14px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.07);margin-bottom:12px">`;
+h+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><button onclick="viewingReceipt=null;render()" style="border:none;background:#F3F4F6;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">← Back</button><button onclick="removeReceipt('${rc.id}')" style="border:none;background:#FEF2F2;color:#DC2626;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">🗑 Delete</button></div>`;
+h+=`<div style="font-size:18px;font-weight:800;color:#1F2937;margin-bottom:4px">£${Number(rc.amount||0).toFixed(2)}</div>`;
+h+=`<div style="font-size:13px;color:#6B7280;margin-bottom:12px">${esc(rc.vendor||'No vendor')} · ${rc.date||'No date'}</div>`;
+h+=`<div style="display:grid;gap:8px;font-size:13px">`;
+h+=`<div><span style="color:#9CA3AF;font-weight:600">Category:</span> ${esc(rc.category||'Other')}</div>`;
+h+=`<div><span style="color:#9CA3AF;font-weight:600">Description:</span> ${esc(rc.description||'—')}</div>`;
+h+=`<div><span style="color:#9CA3AF;font-weight:600">Paid from:</span> ${esc(rc.source||'—')}</div>`;
+if(rc.paidBy)h+=`<div><span style="color:#9CA3AF;font-weight:600">Staff member:</span> ${esc(rc.paidBy)}</div>`;
+h+=`<div><span style="color:#9CA3AF;font-weight:600">Added by:</span> ${esc(rc.addedBy||'—')}</div>`;
+if(rc.reimbursed)h+=`<div style="margin-top:4px;background:#D1FAE5;border-radius:8px;padding:8px 12px;font-size:12px;color:#065F46;font-weight:600">✅ Reimbursed${rc.reimbursedDate?' on '+rc.reimbursedDate:''}${rc.reimbursedBy?' by '+esc(rc.reimbursedBy):''}</div>`;
+if(rc.source==='Staff (reimburse)'&&!rc.reimbursed)h+=`<button onclick="reimburseReceipt('${rc.id}')" style="margin-top:8px;width:100%;border:none;background:#D97706;color:white;border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer">💰 Reimburse from Petty Cash (£${Number(rc.amount||0).toFixed(2)})</button>`;
+h+=`</div></div>`;
+}
+} else if(addingReceipt){
+// Add receipt form
+h+=`<div style="background:white;border-radius:14px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.07);margin-bottom:12px">`;
+h+=`<div style="font-size:15px;font-weight:700;color:#1F2937;margin-bottom:12px">New Receipt</div>`;
+h+=`<div class="hr-form">`;
+h+=`<div class="hr-row"><label>Date</label><input type="date" value="${addingReceipt.date||today()}" onchange="addingReceipt.date=this.value"></div>`;
+h+=`<div class="hr-row"><label>Amount (£)</label><input type="number" step="0.01" min="0" placeholder="0.00" value="${addingReceipt.amount||''}" onchange="addingReceipt.amount=this.value"></div>`;
+h+=`<div class="hr-row"><label>Vendor / Shop</label><input type="text" list="rcVendorList" placeholder="Select or type new..." value="${esc(addingReceipt.vendor||'')}" onchange="addingReceipt.vendor=this.value" oninput="addingReceipt.vendor=this.value"><datalist id="rcVendorList">${getVendors().map(v=>`<option value="${esc(v)}">`).join('')}</datalist></div>`;
+h+=`<div class="hr-row"><label>Description</label><input type="text" placeholder="What was purchased" value="${esc(addingReceipt.description||'')}" onchange="addingReceipt.description=this.value"></div>`;
+h+=`<div class="hr-row"><label>Category</label><input type="text" list="rcCatList" placeholder="Select or type new..." value="${esc(addingReceipt.category||'')}" onchange="addingReceipt.category=this.value" oninput="addingReceipt.category=this.value"><datalist id="rcCatList">${getSpendCats().map(c=>`<option value="${c}">`).join('')}</datalist></div>`;
+h+=`<div class="hr-row"><label>Paid from</label><select onchange="addingReceipt.source=this.value;render()">${PAY_SOURCES.map(s=>`<option value="${s}"${addingReceipt.source===s?' selected':''}>${s}</option>`).join('')}</select></div>`;
+if(addingReceipt.source==='Staff (reimburse)')h+=`<div class="hr-row"><label>Staff member</label><select onchange="addingReceipt.paidBy=this.value"><option value="">Select staff...</option>${staff.map(s=>`<option value="${s}"${addingReceipt.paidBy===s?' selected':''}>${s}</option>`).join('')}</select></div>`;
+if(addingReceipt.source==='Petty Cash')h+=`<div style="background:#FEF3C7;border-radius:8px;padding:8px 12px;font-size:11px;color:#92400E;font-weight:600;margin-top:4px">💰 Petty cash balance will be automatically deducted (current: £${calcPettyBalance().toFixed(2)})</div>`;
+h+=`</div>`;
+h+=`<div style="display:flex;gap:8px;margin-top:12px">`;
+h+=`<button onclick="addReceipt()" style="flex:1;border:none;background:#10B981;color:white;border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer">Save Receipt</button>`;
+h+=`<button onclick="addingReceipt=null;render()" style="flex:1;border:none;background:#F3F4F6;color:#6B7280;border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer">Cancel</button>`;
+h+=`</div></div>`;
+} else {
+// Receipt cards
+if(!filteredR.length){h+=`<div style="text-align:center;padding:40px 16px;color:#9CA3AF"><div style="font-size:32px;margin-bottom:8px">🧾</div><div style="font-size:14px;font-weight:600">No receipts${spendingFilter!=='all'?' in this period':''}</div></div>`}
+filteredR.forEach(rc=>{
+const catColors={'Food & Supplies':'#10B981',Activities:'#6366F1',Transport:'#D97706',Equipment:'#3B82F6',Office:'#8B5CF6','Petty Cash':'#EC4899',Other:'#6B7280'};
+const cc=catColors[rc.category]||'#6B7280';
+h+=`<div onclick="viewingReceipt='${rc.id}';render()" style="background:white;border-radius:14px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,0.07);overflow:hidden;cursor:pointer;border-left:4px solid ${cc}">`;
+h+=`<div style="padding:12px 14px"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:14px;font-weight:700;color:#1F2937">${esc(rc.vendor||'No vendor')}</div><div style="font-size:11px;color:#9CA3AF;margin-top:2px">${rc.date||'—'}${rc.source?' · '+esc(rc.source):''}${rc.paidBy?' · '+esc(rc.paidBy):''}</div></div><div style="text-align:right"><div style="font-size:16px;font-weight:800;color:#1F2937">£${Number(rc.amount||0).toFixed(2)}</div><span style="display:inline-block;margin-top:4px;background:${cc}15;color:${cc};font-size:10px;font-weight:700;padding:2px 8px;border-radius:100px">${esc(rc.category||'Other')}</span></div></div>`;
+if(rc.description)h+=`<div style="font-size:12px;color:#6B7280;margin-top:6px">${esc(rc.description)}</div>`;
+if(rc.source==='Staff (reimburse)'&&!rc.reimbursed)h+=`<div style="font-size:11px;font-weight:700;color:#D97706;margin-top:4px">⏳ Awaiting reimbursement</div>`;
+if(rc.reimbursed&&rc.source==='Staff (reimburse)')h+=`<div style="font-size:11px;font-weight:700;color:#059669;margin-top:4px">✅ Reimbursed</div>`;
+h+=`</div></div>`;
+});
+// Add button
+h+=`<button onclick="addingReceipt={date:today(),amount:'',vendor:'',description:'',category:'Food & Supplies',source:'Petty Cash',paidBy:''};render()" style="width:100%;border:2px dashed #D1D5DB;border-radius:14px;padding:14px;font-size:14px;font-weight:700;color:#6B7280;cursor:pointer;background:none;margin-top:4px">🧾 Add Receipt</button>`;
+}
+
+} else {
+// ===== PETTY CASH VIEW =====
+const pcBal=calcPettyBalance();
+const allEntries=[];
+(spending.pettyCash.topUps||[]).forEach(t=>allEntries.push({...t,type:'topUp',_amt:Number(t.amount||0)}));
+(spending.pettyCash.transactions||[]).forEach(t=>allEntries.push({...t,type:'spend',_amt:Number(t.amount||0)}));
+allEntries.sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.id||'').localeCompare(a.id||''));
+
+// Balance card
+h+=`<div style="background:linear-gradient(135deg,#1F2937,#374151);border-radius:16px;padding:20px;margin-bottom:14px;text-align:center;color:white">`;
+h+=`<div style="font-size:11px;font-weight:600;text-transform:uppercase;opacity:0.7;margin-bottom:4px">Petty Cash Balance</div>`;
+h+=`<div style="font-size:36px;font-weight:800">£${pcBal.toFixed(2)}</div>`;
+h+=`<button onclick="addingPettyCash={date:today(),cashIn:'',cashOut:'',category:'',description:'',staffInvolved:[],clientsInvolved:[],invoiceNo:'',transactionNo:''};render()" style="border:none;background:#6366F1;color:white;border-radius:10px;padding:10px 24px;font-size:13px;font-weight:700;cursor:pointer;margin-top:14px">+ New Transaction</button>`;
+h+=`</div>`;
+
+// Add transaction form
+if(addingPettyCash){
+h+=`<div style="background:white;border-radius:14px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.07);margin-bottom:12px">`;
+h+=`<div style="font-size:15px;font-weight:700;color:#1F2937;margin-bottom:12px">New Petty Cash Transaction</div>`;
+h+=`<div class="hr-form">`;
+h+=`<div class="hr-row"><label>Date of Transaction</label><input type="date" value="${addingPettyCash.date||today()}" onchange="addingPettyCash.date=this.value"></div>`;
+h+=`<div class="hr-row"><label>Category</label><input type="text" list="pcCatList" placeholder="Select or type new..." value="${esc(addingPettyCash.category||'')}" onchange="addingPettyCash.category=this.value" oninput="addingPettyCash.category=this.value"><datalist id="pcCatList">${getSpendCats().map(c=>`<option value="${c}">`).join('')}</datalist></div>`;
+h+=`<div class="hr-row"><label>Description</label><input type="text" placeholder="Details of transaction" value="${esc(addingPettyCash.description||'')}" onchange="addingPettyCash.description=this.value"></div>`;
+// Staff multi-select dropdown
+const pcStSel=(addingPettyCash.staffInvolved||[]);
+h+=`<div class="hr-row"><label>Staff</label><div class="ms-dropdown">`;
+h+=`<button type="button" class="ms-toggle" onclick="spendDropdown=spendDropdown==='pcStaff'?null:'pcStaff';render()">${pcStSel.length?pcStSel.map(s=>esc(s)).join(', '):'Select staff...'} <span class="ms-arrow">${spendDropdown==='pcStaff'?'▲':'▼'}</span></button>`;
+if(spendDropdown==='pcStaff'){h+=`<div class="ms-panel">`;staff.forEach(s=>{const sel=pcStSel.includes(s);h+=`<label class="ms-opt${sel?' on':''}" onclick="togglePettyStaff('${esc(s)}')"><span class="ms-check">${sel?'☑':'☐'}</span>${esc(s)}</label>`});h+=`</div>`}
+h+=`</div></div>`;
+// Clients multi-select dropdown
+const pcClSel=(addingPettyCash.clientsInvolved||[]);
+h+=`<div class="hr-row"><label>Clients</label><div class="ms-dropdown">`;
+h+=`<button type="button" class="ms-toggle" onclick="spendDropdown=spendDropdown==='pcClient'?null:'pcClient';render()">${pcClSel.length?pcClSel.map(s=>esc(s)).join(', '):'Select clients...'} <span class="ms-arrow">${spendDropdown==='pcClient'?'▲':'▼'}</span></button>`;
+if(spendDropdown==='pcClient'){h+=`<div class="ms-panel">`;serviceUsers.forEach(su=>{const sel=pcClSel.includes(su.name);h+=`<label class="ms-opt${sel?' on':''}" onclick="togglePettyClient('${esc(su.name)}')"><span class="ms-check">${sel?'☑':'☐'}</span>${esc(su.name)}</label>`});h+=`</div>`}
+h+=`</div></div>`;
+// Cash In / Cash Out
+h+=`<div style="display:flex;gap:12px"><div class="hr-row" style="flex:1"><label style="color:#10B981">Cash In (£)</label><input type="number" step="0.01" min="0" placeholder="0.00" value="${addingPettyCash.cashIn||''}" onchange="addingPettyCash.cashIn=this.value" style="border:2px solid #D1FAE5"></div>`;
+h+=`<div class="hr-row" style="flex:1"><label style="color:#EF4444">Cash Out (£)</label><input type="number" step="0.01" min="0" placeholder="0.00" value="${addingPettyCash.cashOut||''}" onchange="addingPettyCash.cashOut=this.value" style="border:2px solid #FEE2E2"></div></div>`;
+// Invoice / Transaction No.
+h+=`<div style="display:flex;gap:12px"><div class="hr-row" style="flex:1"><label>Invoice No.</label><input type="text" placeholder="Optional" value="${esc(addingPettyCash.invoiceNo||'')}" onchange="addingPettyCash.invoiceNo=this.value"></div>`;
+h+=`<div class="hr-row" style="flex:1"><label>Transaction No.</label><input type="text" placeholder="Optional" value="${esc(addingPettyCash.transactionNo||'')}" onchange="addingPettyCash.transactionNo=this.value"></div></div>`;
+h+=`</div>`;
+h+=`<div style="display:flex;gap:8px;margin-top:12px">`;
+h+=`<button onclick="addPettyTransaction()" style="flex:1;border:none;background:#6366F1;color:white;border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer">Save Transaction</button>`;
+h+=`<button onclick="addingPettyCash=null;render()" style="flex:1;border:none;background:#F3F4F6;color:#6B7280;border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer">Cancel</button>`;
+h+=`</div></div>`;
+}
+
+// Transaction log
+h+=`<div style="font-size:13px;font-weight:700;color:#1F2937;margin-bottom:8px">Transaction Log</div>`;
+if(!allEntries.length){h+=`<div style="text-align:center;padding:30px 16px;color:#9CA3AF"><div style="font-size:28px;margin-bottom:6px">💰</div><div style="font-size:13px;font-weight:600">No transactions yet</div></div>`}
+let runBal=0;
+const balEntries=[...allEntries].reverse();
+balEntries.forEach(e=>{if(e.type==='topUp')runBal+=Number(e.amount);else runBal-=Number(e.amount);e._runBal=runBal});
+allEntries.forEach(e=>{
+const isTop=e.type==='topUp';
+const ppl=[...(e.staffInvolved||[]),...(e.clientsInvolved||[])].join(', ');
+h+=`<div style="background:white;border-radius:12px;margin-bottom:6px;padding:12px 14px;box-shadow:0 1px 3px rgba(0,0,0,0.05)">`;
+h+=`<div style="display:flex;align-items:center;gap:10px">`;
+h+=`<div style="width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;background:${isTop?'#D1FAE5':'#FEE2E2'}">${isTop?'⬆':'⬇'}</div>`;
+h+=`<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;color:#1F2937">${isTop?esc(e.note||e.description||'Cash in'):esc(e.description||'Cash out')}</div>`;
+h+=`<div style="font-size:11px;color:#9CA3AF">${e.date||'—'}${e.category?' · '+esc(e.category):''}${e.addedBy?' · '+esc(e.addedBy):''}</div>`;
+if(ppl)h+=`<div style="font-size:10px;color:#6B7280;margin-top:2px">👥 ${esc(ppl)}</div>`;
+if(e.invoiceNo||e.transactionNo)h+=`<div style="font-size:10px;color:#9CA3AF;margin-top:1px">${e.invoiceNo?'Inv: '+esc(e.invoiceNo):''}${e.invoiceNo&&e.transactionNo?' · ':''}${e.transactionNo?'Txn: '+esc(e.transactionNo):''}</div>`;
+h+=`</div>`;
+h+=`<div style="text-align:right;flex-shrink:0"><div style="font-size:14px;font-weight:800;color:${isTop?'#10B981':'#EF4444'}">${isTop?'+':'−'}£${Number(e.amount).toFixed(2)}</div><div style="font-size:10px;color:#9CA3AF">Bal: £${e._runBal.toFixed(2)}</div></div>`;
+h+=`<button onclick="event.stopPropagation();removePettyEntry('${e.type}','${e.id}')" style="border:none;background:none;color:#D1D5DB;cursor:pointer;font-size:14px;padding:4px;flex-shrink:0" title="Delete">🗑</button>`;
+h+=`</div></div>`;
+});
+}
+h+=`</div>`;}
+
 // ===== MINIBUS TAB =====
 if(view==='minibusTab'){
 const mbWk=getWeekKey(minibusWeekOffset);
 const mbDates=getWeekDates(minibusWeekOffset);
 const DAY_LABELS={mon:'Monday',tue:'Tuesday',wed:'Wednesday',thu:'Thursday',fri:'Friday'};
 const ROUTE_OPTS=['East Sussex','West Sussex','Hove','Brighton'];
-const MB_SEL_PICKUP=`<option value="">-- Route --</option><option value="personal">🚗 Personal</option>${ROUTE_OPTS.map(r=>`<option value="${r}">${r}</option>`).join('')}`;
-const MB_SEL_RETURN=`<option value="">-- Route --</option><option value="personal">🚗 Personal</option><option value="notreturning">✗ Not returning</option>${ROUTE_OPTS.map(r=>`<option value="${r}">${r}</option>`).join('')}`;
 
 // Pre-populate personal-default SUs if day not yet touched
-if(minibusView==='day'){
-  const dayAlloc=minibusAllocation[mbWk]?.[minibusDay];
-  const daySUs=getSUsForDay(minibusDay);
-  const needsPop=daySUs.some(su=>su.defaultTransport==='personal'&&!dayAlloc?.[su.id]);
-  if(needsPop)prePopulateMbDay(mbWk,minibusDay);
-}
+{const _da=minibusAllocation[mbWk]?.[minibusDay];const _ds=getSUsForDay(minibusDay);if(_ds.some(su=>su.defaultTransport==='personal'&&!_da?.[su.id]))prePopulateMbDay(mbWk,minibusDay);}
 
-h+=`<div style="padding:16px;max-width:800px;margin:0 auto">`;
+h+=`<div style="padding:16px;max-width:1100px;margin:0 auto">`;
 
+// Sub-tabs
+h+=`<div class="rota-sub-tabs" style="margin-bottom:16px">
+<button class="rota-sub-tab ${mbSubTab==='planner'?'on':''}" onclick="mbSubTab='planner';render()">📋 Planner</button>
+<button class="rota-sub-tab ${mbSubTab==='fleet'?'on':''}" onclick="mbSubTab='fleet';fleetViewId=null;render()">🚐 Fleet</button>
+</div>`;
+
+if(mbSubTab==='planner'){
 // Week nav
 h+=`<div class="rota-week-nav" style="margin-bottom:12px">
 <button class="rota-week-btn" onclick="minibusWeekOffset--;render()">◀ Prev</button>
@@ -1808,215 +2034,380 @@ h+=`<div class="rota-week-nav" style="margin-bottom:12px">
 <button class="rota-week-btn" onclick="minibusWeekOffset++;render()">Next ▶</button>
 </div>`;
 
-// Sub-tabs
-h+=`<div class="rota-sub-tabs" style="margin-bottom:12px">
-<button class="rota-sub-tab ${minibusView==='day'?'on':''}" onclick="minibusView='day';render()">📋 Day Planner</button>
-<button class="rota-sub-tab ${minibusView==='runsheet'?'on':''}" onclick="minibusView='runsheet';render()">📄 Runsheet</button>
-</div>`;
+// Day selector + AM/PM filter + Print
+h+=`<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;align-items:center">`;
+['mon','tue','wed','thu','fri'].forEach((d,i)=>{
+  const dt=mbDates[i];const on=minibusDay===d;
+  h+=`<button onclick="minibusDay='${d}';render()" style="border:2px solid ${on?'#3A7BD5':'#E5E7EB'};background:${on?'#EFF6FF':'white'};color:${on?'#3A7BD5':'#6B7280'};border-radius:100px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">${DAY_LABELS[d].slice(0,3)} ${fmtShortDate(dt)}</button>`;
+});
+h+=`<div style="margin-left:auto;display:flex;gap:5px;align-items:center">`;
+[['all','All Day'],['AM','AM only'],['PM','PM only']].forEach(([val,lbl])=>{
+  const on=minibusAmPm===val;
+  h+=`<button onclick="minibusAmPm='${val}';render()" style="border:2px solid ${on?'#7C3AED':'#E5E7EB'};background:${on?'#EDE9FE':'white'};color:${on?'#7C3AED':'#6B7280'};border-radius:100px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer">${lbl}</button>`;
+});
+h+=`<button onclick="window.print()" style="border:1px solid #E5E7EB;background:white;border-radius:8px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer;margin-left:4px">🖨 Print</button>`;
+h+=`</div></div>`;
 
-if(minibusView==='day'){
-  // Day selector
-  h+=`<div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">`;
-  ['mon','tue','wed','thu','fri'].forEach((d,i)=>{
-    const dt=mbDates[i];
-    const label=DAY_LABELS[d];
-    const on=minibusDay===d;
-    h+=`<button onclick="minibusDay='${d}';render()" style="border:2px solid ${on?'#3A7BD5':'#E5E7EB'};background:${on?'#EFF6FF':'white'};color:${on?'#3A7BD5':'#6B7280'};border-radius:100px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">${label.slice(0,3)} ${fmtShortDate(dt)}</button>`;
+const wk=mbWk;const day=minibusDay;
+const dayAlloc=minibusAllocation[wk]?.[day]||{};
+const allSUs=serviceUsers.slice().sort((a,b)=>a.name.localeCompare(b.name));
+const daySUs=getSUsForDay(day);
+const daySUIds=new Set(daySUs.map(s=>s.id));
+
+// AM/PM filter helper
+function mbAmPmMatch(suId){
+  if(minibusAmPm==='all')return true;
+  const ap=(minibusAllocation[wk]?.[day]?.[suId]?.ampm)||'all';
+  return ap===minibusAmPm||ap==='all';
+}
+
+// Attendance badge (read-only)
+function regBadge(suId){
+  const st=getRegStat(wk,day,suId);
+  if(st==='present')return `<span style="background:#F0FDF4;color:#16A34A;font-size:9px;font-weight:700;padding:2px 5px;border-radius:100px">✓</span>`;
+  if(st==='absent')return `<span style="background:#FEF2F2;color:#DC2626;font-size:9px;font-weight:700;padding:2px 5px;border-radius:100px">✗</span>`;
+  return `<span style="background:#F3F4F6;color:#D1D5DB;font-size:9px;font-weight:700;padding:2px 5px;border-radius:100px">–</span>`;
+}
+
+// AM/PM badge — click to cycle all→AM→PM→all
+function ampmBadge(suId){
+  const cur=(dayAlloc[suId]?.ampm)||'all';
+  const next=cur==='all'?'AM':cur==='AM'?'PM':'all';
+  const [bg,fg]=cur==='AM'?['#DBEAFE','#1D4ED8']:cur==='PM'?['#FEF3C7','#92400E']:['#F3F4F6','#6B7280'];
+  const lbl=cur==='all'?'All Day':cur;
+  return `<button onclick="setMbAlloc('${wk}','${day}','${suId}','ampm','${next}')" title="Click to change AM/PM" style="border:none;background:${bg};color:${fg};border-radius:100px;padding:2px 7px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap">${lbl}</button>`;
+}
+
+// Sort SUs into buckets (filtered by AM/PM)
+const buckets={};
+ROUTE_OPTS.forEach(r=>{buckets[r]=[]});
+buckets.personal=[];
+const unallocated=[];
+
+allSUs.forEach(su=>{
+  if(!mbAmPmMatch(su.id))return;
+  const alloc=dayAlloc[su.id];
+  if(!alloc||(!alloc.pickupRoute&&!alloc.returnRoute)){
+    if(daySUIds.has(su.id))unallocated.push(su);
+  } else {
+    const pr=alloc.pickupRoute;
+    if(pr==='personal'||pr==='notreturning'){buckets.personal.push(su)}
+    else if(pr&&ROUTE_OPTS.includes(pr)){buckets[pr].push(su)}
+    else if(daySUIds.has(su.id)){unallocated.push(su)}
+  }
+});
+// Ad-hoc allocations (SUs not normally on this day)
+Object.keys(dayAlloc).forEach(suId=>{
+  const su=serviceUsers.find(s=>s.id===suId);
+  if(!su||daySUIds.has(su.id)||!mbAmPmMatch(suId))return;
+  const pr=dayAlloc[suId].pickupRoute;
+  if(pr==='personal'&&!buckets.personal.find(s=>s.id===su.id)){buckets.personal.push(su)}
+  else if(pr&&ROUTE_OPTS.includes(pr)&&!buckets[pr].find(s=>s.id===su.id)){buckets[pr].push(su)}
+});
+
+// Client row inside a route card
+function mbClientRow(su,isAdHoc){
+  const nt=(dayAlloc[su.id]?.notes)||'';
+  return `<div style="display:flex;align-items:center;gap:5px;padding:7px 0;border-bottom:1px solid #F9FAFB;flex-wrap:wrap">
+    <div style="flex:1;display:flex;align-items:center;gap:5px;min-width:0">
+      ${regBadge(su.id)}
+      <span style="font-size:12px;font-weight:600;color:#1F2937;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(su.name)}${isAdHoc?' <span style="font-size:9px;background:#FEF3C7;color:#D97706;border-radius:100px;padding:1px 5px">ad-hoc</span>':''}</span>
+    </div>
+    ${ampmBadge(su.id)}
+    <input type="text" value="${esc(nt)}" placeholder="Notes…" style="border:1px solid #E5E7EB;border-radius:6px;padding:4px 7px;font-size:11px;outline:none;width:80px;min-width:60px" oninput="setMbAlloc('${wk}','${day}','${su.id}','notes',this.value)">
+    <button onclick="clearMbAlloc('${wk}','${day}','${su.id}')" style="border:none;background:#FEF2F2;color:#DC2626;border-radius:6px;width:22px;height:22px;cursor:pointer;font-size:12px;font-weight:700;flex-shrink:0;line-height:1">×</button>
+  </div>`;
+}
+
+// 2×2 route grid
+h+=`<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:12px">`;
+ROUTE_OPTS.forEach(route=>{
+  const sus=buckets[route];
+  const dc=getDriverCell(wk,route,day,'AM');
+  const alreadyIds=new Set(sus.map(s=>s.id));
+  const addOpts=allSUs.filter(su=>!alreadyIds.has(su.id));
+  const addId=`mb-add-${route.replace(/ /g,'-')}`;
+  h+=`<div style="background:white;border-radius:14px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.07);display:flex;flex-direction:column">`;
+  // Card header: route name + driver + vehicle
+  h+=`<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:2px solid #F3F4F6">`;
+  h+=`<div style="font-size:13px;font-weight:800;color:#1F2937;margin-bottom:6px">🚐 ${esc(route)}</div>`;
+  h+=`<div style="display:flex;gap:6px">`;
+  h+=`<input type="text" value="${esc(dc.driver)}" placeholder="Driver…" style="flex:1;border:1px solid #E5E7EB;border-radius:6px;padding:5px 8px;font-size:11px;outline:none" onchange="setDriverField('${wk}','${route}','${day}','AM','driver',this.value)">`;
+  h+=`<select style="width:110px;border:1px solid #E5E7EB;border-radius:6px;padding:5px 8px;font-size:11px;outline:none;background:white" onchange="setDriverField('${wk}','${route}','${day}','AM','minibus',this.value)">${fleetDropdownOpts(dc.minibus)}</select>`;
+  h+=`</div></div>`;
+  // Passenger count badge
+  h+=`<div style="font-size:10px;font-weight:700;color:#9CA3AF;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:4px">${sus.length} passenger${sus.length!==1?'s':''}</div>`;
+  // Client rows
+  if(sus.length){sus.forEach(su=>{h+=mbClientRow(su,!daySUIds.has(su.id))})}
+  else{h+=`<div style="font-size:12px;color:#D1D5DB;padding:10px 0;text-align:center">No passengers</div>`}
+  // Add passenger
+  h+=`<div style="margin-top:auto;padding-top:8px;display:flex;gap:6px">`;
+  h+=`<select id="${addId}" style="flex:1;border:1px solid #E5E7EB;border-radius:8px;padding:6px 8px;font-size:11px;outline:none;background:white"><option value="">+ Add passenger…</option>${addOpts.map(su=>`<option value="${su.id}">${esc(su.name)}${!daySUIds.has(su.id)?' (ad-hoc)':''}</option>`).join('')}</select>`;
+  h+=`<button onclick="(function(){const s=document.getElementById('${addId}');if(!s||!s.value)return;setMbAlloc('${wk}','${day}',s.value,'pickupRoute','${route}');s.value=''})()" style="border:none;background:#6366F1;color:white;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer">Add</button>`;
+  h+=`</div>`;
+  h+=`</div>`;
+});
+h+=`</div>`;
+
+// Personal transport
+if(buckets.personal.length){
+  h+=`<div style="background:white;border-radius:14px;padding:14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,0.06)">`;
+  h+=`<div style="font-size:13px;font-weight:700;color:#1F2937;margin-bottom:8px">🚗 Personal Transport</div>`;
+  h+=`<div style="display:flex;flex-wrap:wrap;gap:6px">`;
+  buckets.personal.forEach(su=>{
+    h+=`<div style="display:inline-flex;align-items:center;gap:4px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:100px;padding:5px 12px;font-size:12px;font-weight:600;color:#92400E">${regBadge(su.id)} ${esc(su.name)} <button onclick="clearMbAlloc('${wk}','${day}','${su.id}')" style="border:none;background:none;color:#92400E;cursor:pointer;font-size:11px;opacity:0.7;padding:0 2px">×</button></div>`;
+  });
+  h+=`</div></div>`;
+}
+
+// Unallocated
+if(unallocated.length){
+  const MB_SEL_PICKUP=`<option value="">-- Route --</option><option value="personal">🚗 Personal</option>${ROUTE_OPTS.map(r=>`<option value="${r}">${r}</option>`).join('')}`;
+  h+=`<div style="background:white;border-radius:14px;padding:14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,0.06)">`;
+  h+=`<div style="font-size:12px;font-weight:700;color:#9CA3AF;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Unallocated (${unallocated.length})</div>`;
+  unallocated.forEach(su=>{
+    const pr=(dayAlloc[su.id]?.pickupRoute)||'';
+    const nt=(dayAlloc[su.id]?.notes)||'';
+    h+=`<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #F3F4F6;flex-wrap:wrap">
+      <div style="flex:1;display:flex;align-items:center;gap:6px">${regBadge(su.id)}<span style="font-size:13px;font-weight:600;color:#1F2937">${esc(su.name)}</span></div>
+      ${ampmBadge(su.id)}
+      <select style="border:1px solid #E5E7EB;border-radius:8px;padding:5px 8px;font-size:11px;outline:none;background:white" onchange="setMbAlloc('${wk}','${day}','${su.id}','pickupRoute',this.value||null)">
+        ${MB_SEL_PICKUP.replace(`value="${pr}"`,`value="${pr}" selected`)}
+      </select>
+      <input type="text" value="${esc(nt)}" placeholder="Notes…" style="border:1px solid #E5E7EB;border-radius:8px;padding:5px 8px;font-size:11px;outline:none;width:100px" oninput="setMbAlloc('${wk}','${day}','${su.id}','notes',this.value)">
+      <button onclick="clearMbAlloc('${wk}','${day}','${su.id}')" style="border:none;background:#FEF2F2;color:#DC2626;border-radius:6px;width:26px;height:26px;cursor:pointer;font-size:13px;font-weight:700">×</button>
+    </div>`;
   });
   h+=`</div>`;
+}
+} // end planner
 
-  const wk=mbWk;const day=minibusDay;
-  const dayAlloc=minibusAllocation[wk]?.[day]||{};
-  const allSUs=serviceUsers.slice().sort((a,b)=>a.name.localeCompare(b.name));
-  const daySUs=getSUsForDay(day);
-  const daySUIds=new Set(daySUs.map(s=>s.id));
+// ===== FLEET VIEW =====
+if(mbSubTab==='fleet'){
+const LOG_TYPES=['mileage','service','repair','mot','tax','insurance','other'];
+const LOG_ICONS={mileage:'🔢',service:'🔧',repair:'🛠️',mot:'📋',tax:'🏷️',insurance:'🛡️',other:'📝'};
+const LOG_LABELS={mileage:'Mileage',service:'Service',repair:'Repair',mot:'MOT',tax:'Road Tax',insurance:'Insurance',other:'Other'};
+const EXPIRY_TYPES=['mot','tax','insurance'];
 
-  // Sort SUs into buckets
-  const buckets={};
-  ROUTE_OPTS.forEach(r=>{buckets[r]=[]});
-  buckets['personal']=[];
-  const unallocated=[];
+if(fleetViewId){
+  // ---- Vehicle detail ----
+  const veh=minibuses.find(m=>m.id===fleetViewId);
+  if(!veh){fleetViewId=null;}else{
+    const alerts=fleetAlerts(veh);
+    h+=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">`;
+    h+=`<button onclick="fleetViewId=null;editingVehicleId=null;addingFleetLog=null;render()" style="border:1px solid #E5E7EB;background:white;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">◀ Back</button>`;
+    h+=`</div>`;
 
-  allSUs.forEach(su=>{
-    const alloc=dayAlloc[su.id];
-    if(!alloc||(!alloc.pickupRoute&&!alloc.returnRoute)){
-      if(daySUIds.has(su.id))unallocated.push(su);
+    // Vehicle header card
+    if(editingVehicleId===veh.id){
+      const isCarEdit=veh.type==='car';
+      const fld=(lbl,ph,field,extra='')=>`<div><label style="font-size:11px;font-weight:600;color:#6B7280;display:block;margin-bottom:3px">${lbl}</label><input value="${esc(veh[field]||'')}" placeholder="${ph}" style="width:100%;border:1px solid #E5E7EB;border-radius:8px;padding:7px 10px;font-size:12px;outline:none;box-sizing:border-box${extra}" oninput="const v=minibuses.find(m=>m.id==='${veh.id}');if(v)v['${field}']=this.value"></div>`;
+      h+=`<div style="background:white;border-radius:14px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.07);margin-bottom:12px">`;
+      h+=`<div style="font-size:13px;font-weight:700;color:#1F2937;margin-bottom:12px">Edit Vehicle</div>`;
+      // Type toggle
+      h+=`<div style="margin-bottom:12px"><label style="font-size:11px;font-weight:600;color:#6B7280;display:block;margin-bottom:6px">Type</label><div style="display:flex;gap:8px">`;
+      h+=`<button onclick="const v=minibuses.find(m=>m.id==='${veh.id}');if(v){v.type='minibus';save();render()}" style="border:2px solid ${!isCarEdit?'#3A7BD5':'#E5E7EB'};background:${!isCarEdit?'#EFF6FF':'white'};color:${!isCarEdit?'#3A7BD5':'#6B7280'};border-radius:100px;padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer">🚐 Minibus</button>`;
+      h+=`<button onclick="const v=minibuses.find(m=>m.id==='${veh.id}');if(v){v.type='car';save();render()}" style="border:2px solid ${isCarEdit?'#3A7BD5':'#E5E7EB'};background:${isCarEdit?'#EFF6FF':'white'};color:${isCarEdit?'#3A7BD5':'#6B7280'};border-radius:100px;padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer">🚗 Car</button>`;
+      h+=`</div></div>`;
+      h+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">`;
+      h+=fld('Name / Nickname','e.g. Van 1','name');
+      h+=fld('Registration','e.g. OV25XXL','reg',';text-transform:uppercase');
+      h+=fld('Make','e.g. Ford','make');
+      h+=fld('Model','e.g. Transit','model');
+      h+=fld('Year','e.g. 2022','year');
+      h+=fld('Seats','e.g. 9','seats');
+      h+=fld('Colour','e.g. White','colour');
+      // Type-specific field
+      if(isCarEdit){
+        h+=`<div><label style="font-size:11px;font-weight:600;color:#6B7280;display:block;margin-bottom:3px">Doors</label><select style="width:100%;border:1px solid #E5E7EB;border-radius:8px;padding:7px 10px;font-size:12px;outline:none;background:white;box-sizing:border-box" onchange="const v=minibuses.find(m=>m.id==='${veh.id}');if(v)v.doors=this.value">${['','2','3','4','5'].map(d=>`<option value="${d}" ${(veh.doors||'')=== d?'selected':''}>${d||'— Select —'}</option>`).join('')}</select></div>`;
+      } else {
+        h+=`<div style="display:flex;align-items:flex-end;padding-bottom:2px"><label style="font-size:12px;font-weight:700;color:#374151;display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" ${veh.tailift?'checked':''} onchange="const v=minibuses.find(m=>m.id==='${veh.id}');if(v)v.tailift=this.checked"> Working tailift</label></div>`;
+      }
+      h+=`<div style="display:flex;align-items:flex-end;padding-bottom:2px"><label style="font-size:12px;font-weight:700;color:#374151;display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" ${veh.active!==false?'checked':''} onchange="const v=minibuses.find(m=>m.id==='${veh.id}');if(v)v.active=this.checked"> Active vehicle</label></div>`;
+      h+=`</div>`;
+      h+=`<div><label style="font-size:11px;font-weight:600;color:#6B7280;display:block;margin-bottom:3px">Notes</label><textarea rows="2" placeholder="Any additional notes…" style="width:100%;border:1px solid #E5E7EB;border-radius:8px;padding:7px 10px;font-size:12px;outline:none;box-sizing:border-box;resize:vertical" oninput="const v=minibuses.find(m=>m.id==='${veh.id}');if(v)v.notes=this.value">${esc(veh.notes||'')}</textarea></div>`;
+      h+=`<div style="display:flex;gap:8px;margin-top:10px">`;
+      h+=`<button onclick="save();editingVehicleId=null;render()" style="border:none;background:#10B981;color:white;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer">Save</button>`;
+      h+=`<button onclick="editingVehicleId=null;render()" style="border:none;background:#F3F4F6;color:#6B7280;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer">Cancel</button>`;
+      h+=`</div></div>`;
     } else {
-      const pr=alloc.pickupRoute;
-      if(pr==='personal'||pr==='notreturning'){buckets['personal'].push(su)}
-      else if(pr&&ROUTE_OPTS.includes(pr)){buckets[pr].push(su)}
-      else if(daySUIds.has(su.id)){unallocated.push(su)}
+      h+=`<div style="background:white;border-radius:14px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.07);margin-bottom:12px">`;
+      h+=`<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">`;
+      h+=`<div style="display:flex;align-items:center;gap:12px">`;
+      const isCar=veh.type==='car';
+      const vIcon=isCar?'🚗':'🚐';
+      const totalSpend=(veh.log||[]).reduce((s,e)=>s+(e.cost?parseFloat(e.cost):0),0);
+      h+=`<div style="width:48px;height:48px;border-radius:12px;background:${isCar?'#FFF7ED':'#EEF2FF'};display:flex;align-items:center;justify-content:center;font-size:22px">${vIcon}</div>`;
+      h+=`<div><div style="display:flex;align-items:center;gap:8px"><span style="font-size:18px;font-weight:800;color:#1F2937">${esc(veh.reg||veh.name||'Vehicle')}</span><span style="background:${isCar?'#FFF7ED':'#EEF2FF'};color:${isCar?'#C2410C':'#3A7BD5'};border-radius:100px;padding:2px 10px;font-size:11px;font-weight:700">${isCar?'Car':'Minibus'}</span></div>`;
+      if(veh.name&&veh.name!==veh.reg)h+=`<div style="font-size:13px;color:#6B7280">${esc(veh.name)}</div>`;
+      const meta=[veh.make,veh.model,veh.year,veh.colour,veh.seats?veh.seats+' seats':null,isCar&&veh.doors?veh.doors+'-door':null,!isCar&&veh.tailift?'Tailift ✓':!isCar&&veh.tailift===false?'No tailift':null].filter(Boolean);
+      if(meta.length)h+=`<div style="font-size:12px;color:#9CA3AF;margin-top:2px">${meta.map(esc).join(' · ')}</div>`;
+      if(totalSpend>0)h+=`<div style="font-size:12px;color:#6B7280;margin-top:3px">Total spend: <strong>£${totalSpend.toFixed(2)}</strong></div>`;
+      h+=`</div></div>`;
+      h+=`<div style="display:flex;gap:8px;align-items:center">`;
+      if(veh.active===false)h+=`<span style="background:#FEE2E2;color:#DC2626;border-radius:100px;padding:3px 10px;font-size:11px;font-weight:700">Inactive</span>`;
+      h+=`<button onclick="editingVehicleId='${veh.id}';render()" style="border:1px solid #E5E7EB;background:white;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">Edit</button>`;
+      h+=`<button onclick="if(confirm('Delete this vehicle and all its log entries?'))deleteVehicle('${veh.id}')" style="border:none;background:#FEF2F2;color:#DC2626;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">Delete</button>`;
+      h+=`</div></div>`;
+      if(veh.notes)h+=`<div style="margin-top:10px;font-size:12px;color:#6B7280;border-top:1px solid #F3F4F6;padding-top:8px">${esc(veh.notes)}</div>`;
+      h+=`</div>`;
     }
-  });
 
-  // Also show adhoc allocations (SUs not normally on this day but with an alloc)
-  Object.keys(dayAlloc).forEach(suId=>{
-    const su=serviceUsers.find(s=>s.id===suId);
-    if(!su)return;
-    if(!daySUIds.has(su.id)){
-      // adhoc — put in appropriate bucket
-      const pr=dayAlloc[suId].pickupRoute;
-      if(pr==='personal'){buckets['personal'].push(su)}
-      else if(pr&&ROUTE_OPTS.includes(pr)){buckets[pr].push(su)}
+    // Alerts
+    if(alerts.length){
+      h+=`<div style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px">`;
+      alerts.forEach(a=>{
+        const clr=a.days<0?'#DC2626':a.days<=14?'#EA580C':'#CA8A04';
+        const bg=a.days<0?'#FEF2F2':a.days<=14?'#FFF7ED':'#FEFCE8';
+        const msg=a.days<0?`${a.type} expired ${Math.abs(a.days)}d ago`:a.days===0?`${a.type} expires today`:`${a.type} expires in ${a.days}d`;
+        h+=`<div style="background:${bg};border:1px solid ${clr}44;border-radius:10px;padding:8px 14px;font-size:12px;font-weight:700;color:${clr}">⚠️ ${msg} <span style="font-weight:400;opacity:0.8">(${a.exp})</span></div>`;
+      });
+      h+=`</div>`;
     }
-  });
 
-  function regBadge(suId){
-    const st=getRegStat(wk,day,suId);
-    if(st==='present')return `<span style="background:#F0FDF4;color:#16A34A;font-size:9px;font-weight:700;padding:1px 5px;border-radius:100px">✓</span>`;
-    if(st==='absent')return `<span style="background:#FEF2F2;color:#DC2626;font-size:9px;font-weight:700;padding:1px 5px;border-radius:100px">✗</span>`;
-    return `<span style="background:#F3F4F6;color:#9CA3AF;font-size:9px;font-weight:700;padding:1px 5px;border-radius:100px">–</span>`;
-  }
+    // Log table
+    const logEntries=(veh.log||[]).slice().sort((a,b)=>b.date.localeCompare(a.date));
+    h+=`<div style="background:white;border-radius:14px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.07)">`;
+    h+=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">`;
+    h+=`<div style="font-size:13px;font-weight:700;color:#1F2937">Vehicle Log</div>`;
+    h+=`<button onclick="addingFleetLog=addingFleetLog?null:{vid:'${veh.id}',date:'${todayStr()}',type:'mileage',mileage:'',description:'',cost:'',expiryDate:''};render()" style="border:none;background:#6366F1;color:white;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer">${addingFleetLog?'✕ Cancel':'+ Add Entry'}</button>`;
+    h+=`</div>`;
 
-  function suRow(su,showAdHoc){
-    const alloc=dayAlloc[su.id]||{pickupRoute:null,returnRoute:null,notes:''};
-    const pr=alloc.pickupRoute||'';
-    const rr=alloc.returnRoute||'';
-    const nt=alloc.notes||'';
-    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #F3F4F6;flex-wrap:wrap">
-      <div style="display:flex;align-items:center;gap:6px;min-width:120px;flex:1">
-        ${regBadge(su.id)}
-        <span style="font-size:13px;font-weight:600;color:#1F2937">${esc(su.name)}</span>
-        ${showAdHoc?`<span style="font-size:9px;background:#FEF3C7;color:#D97706;border-radius:100px;padding:1px 6px;font-weight:700">ad-hoc</span>`:''}
-      </div>
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-        <select style="border:1px solid #E5E7EB;border-radius:8px;padding:5px 8px;font-size:11px;outline:none;background:white" onchange="setMbAlloc('${wk}','${day}','${su.id}','pickupRoute',this.value||null)">
-          ${MB_SEL_PICKUP.replace(`value="${pr}"`,`value="${pr}" selected`)}
-        </select>
-        <span style="font-size:10px;color:#9CA3AF">→</span>
-        <select style="border:1px solid #E5E7EB;border-radius:8px;padding:5px 8px;font-size:11px;outline:none;background:white" onchange="setMbAlloc('${wk}','${day}','${su.id}','returnRoute',this.value||null)">
-          ${MB_SEL_RETURN.replace(`value="${rr}"`,`value="${rr}" selected`)}
-        </select>
-        <input type="text" value="${esc(nt)}" placeholder="Notes…" style="border:1px solid #E5E7EB;border-radius:8px;padding:5px 8px;font-size:11px;outline:none;min-width:80px;max-width:120px" oninput="setMbAlloc('${wk}','${day}','${su.id}','notes',this.value)">
-        <button onclick="clearMbAlloc('${wk}','${day}','${su.id}')" style="border:none;background:#FEF2F2;color:#DC2626;border-radius:6px;width:26px;height:26px;cursor:pointer;font-size:13px;font-weight:700">×</button>
-      </div>
-    </div>`;
-  }
+    // Add entry form
+    if(addingFleetLog&&addingFleetLog.vid===veh.id){
+      const af=addingFleetLog;
+      const showExpiry=EXPIRY_TYPES.includes(af.type);
+      const showMileage=['mileage','service','repair'].includes(af.type);
+      const showCost=['service','repair','mot','tax','insurance','other'].includes(af.type);
+      h+=`<div style="background:#F9FAFB;border-radius:10px;padding:14px;margin-bottom:14px;border:1px solid #E5E7EB">`;
+      h+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">`;
+      h+=`<div><label style="font-size:11px;font-weight:600;color:#6B7280;display:block;margin-bottom:3px">Date</label><input type="date" value="${af.date}" style="width:100%;border:1px solid #E5E7EB;border-radius:8px;padding:7px 10px;font-size:12px;outline:none;box-sizing:border-box" onchange="addingFleetLog.date=this.value;render()"></div>`;
+      h+=`<div><label style="font-size:11px;font-weight:600;color:#6B7280;display:block;margin-bottom:3px">Type</label><select style="width:100%;border:1px solid #E5E7EB;border-radius:8px;padding:7px 10px;font-size:12px;outline:none;background:white;box-sizing:border-box" onchange="addingFleetLog.type=this.value;render()">${LOG_TYPES.map(t=>`<option value="${t}" ${af.type===t?'selected':''}>${LOG_ICONS[t]} ${LOG_LABELS[t]}</option>`).join('')}</select></div>`;
+      if(showMileage)h+=`<div><label style="font-size:11px;font-weight:600;color:#6B7280;display:block;margin-bottom:3px">Mileage</label><input type="number" value="${af.mileage||''}" placeholder="e.g. 45230" style="width:100%;border:1px solid #E5E7EB;border-radius:8px;padding:7px 10px;font-size:12px;outline:none;box-sizing:border-box" oninput="addingFleetLog.mileage=this.value"></div>`;
+      if(showCost)h+=`<div><label style="font-size:11px;font-weight:600;color:#6B7280;display:block;margin-bottom:3px">Cost (£)</label><input type="number" step="0.01" value="${af.cost||''}" placeholder="0.00" style="width:100%;border:1px solid #E5E7EB;border-radius:8px;padding:7px 10px;font-size:12px;outline:none;box-sizing:border-box" oninput="addingFleetLog.cost=this.value"></div>`;
+      if(showExpiry)h+=`<div><label style="font-size:11px;font-weight:600;color:#6B7280;display:block;margin-bottom:3px">Expiry Date</label><input type="date" value="${af.expiryDate||''}" style="width:100%;border:1px solid #E5E7EB;border-radius:8px;padding:7px 10px;font-size:12px;outline:none;box-sizing:border-box" onchange="addingFleetLog.expiryDate=this.value;render()"></div>`;
+      h+=`</div>`;
+      h+=`<div style="margin-bottom:10px"><label style="font-size:11px;font-weight:600;color:#6B7280;display:block;margin-bottom:3px">Description / Notes</label><input value="${esc(af.description||'')}" placeholder="Details…" style="width:100%;border:1px solid #E5E7EB;border-radius:8px;padding:7px 10px;font-size:12px;outline:none;box-sizing:border-box" oninput="addingFleetLog.description=this.value"></div>`;
+      h+=`<button onclick="addFleetLogEntry(addingFleetLog.vid,addingFleetLog);addingFleetLog=null" style="border:none;background:#10B981;color:white;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer">Save Entry</button>`;
+      h+=`</div>`;
+    }
 
-  // Unallocated section
-  if(unallocated.length){
-    h+=`<div style="background:white;border-radius:14px;padding:14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,0.06)">`;
-    h+=`<div style="font-size:12px;font-weight:700;color:#9CA3AF;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px">Unallocated (${unallocated.length})</div>`;
-    unallocated.forEach(su=>{h+=suRow(su,false)});
+    // Log entries
+    if(!logEntries.length&&!addingFleetLog){
+      h+=`<div style="text-align:center;padding:24px;color:#9CA3AF"><div style="font-size:28px;margin-bottom:6px">📋</div><div style="font-size:13px">No log entries yet. Add the first one above.</div></div>`;
+    } else if(logEntries.length){
+      h+=`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">`;
+      h+=`<thead><tr style="border-bottom:2px solid #F3F4F6;text-align:left"><th style="padding:6px 8px;color:#9CA3AF;font-weight:700">Date</th><th style="padding:6px 8px;color:#9CA3AF;font-weight:700">Type</th><th style="padding:6px 8px;color:#9CA3AF;font-weight:700">Mileage</th><th style="padding:6px 8px;color:#9CA3AF;font-weight:700">Description</th><th style="padding:6px 8px;color:#9CA3AF;font-weight:700">Cost</th><th style="padding:6px 8px;color:#9CA3AF;font-weight:700">Expiry</th><th style="padding:6px 8px;width:30px"></th></tr></thead><tbody>`;
+      logEntries.forEach(e=>{
+        const typeCol={mileage:'#6366F1',service:'#0EA5E9',repair:'#F59E0B',mot:'#8B5CF6',tax:'#10B981',insurance:'#3B82F6',other:'#9CA3AF'}[e.type]||'#9CA3AF';
+        h+=`<tr style="border-bottom:1px solid #F9FAFB">`;
+        h+=`<td style="padding:8px;color:#374151;white-space:nowrap">${e.date||'—'}</td>`;
+        h+=`<td style="padding:8px;white-space:nowrap"><span style="background:${typeCol}18;color:${typeCol};border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700">${LOG_ICONS[e.type]||''} ${LOG_LABELS[e.type]||e.type}</span></td>`;
+        h+=`<td style="padding:8px;color:#6B7280">${e.mileage?Number(e.mileage).toLocaleString():'—'}</td>`;
+        h+=`<td style="padding:8px;color:#374151;max-width:200px">${esc(e.description||'—')}</td>`;
+        h+=`<td style="padding:8px;color:#374151;white-space:nowrap">${e.cost?'£'+Number(e.cost).toFixed(2):'—'}</td>`;
+        h+=`<td style="padding:8px;color:#374151;white-space:nowrap">${e.expiryDate||'—'}</td>`;
+        h+=`<td style="padding:8px"><button onclick="deleteFleetLog('${veh.id}','${e.id}')" style="border:none;background:none;color:#D1D5DB;cursor:pointer;font-size:13px;padding:2px" title="Delete">🗑</button></td>`;
+        h+=`</tr>`;
+      });
+      h+=`</tbody></table></div>`;
+    }
     h+=`</div>`;
   }
+} else {
+  // ---- Vehicle list ----
 
-  // Route sections
-  ROUTE_OPTS.forEach(route=>{
-    const sus=buckets[route];
-    const dc=getDriverCell(wk,route,day,'AM');
-    h+=`<div style="background:white;border-radius:14px;padding:14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,0.06)">`;
-    h+=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">`;
-    h+=`<div style="font-size:13px;font-weight:700;color:#1F2937">🚐 ${esc(route)}</div>`;
-    if(dc.driver||dc.minibus)h+=`<div style="font-size:11px;color:#6B7280">${esc(dc.driver)}${dc.minibus?' · '+esc(dc.minibus):''}</div>`;
-    h+=`</div>`;
-    if(sus.length){sus.forEach(su=>{h+=suRow(su,!daySUIds.has(su.id))})}
-    else{h+=`<div style="font-size:12px;color:#D1D5DB;padding:6px 0">No passengers allocated</div>`}
-    // Add SU dropdown
-    const alreadyOnRoute=new Set(sus.map(s=>s.id));
-    const addOpts=allSUs.filter(su=>!alreadyOnRoute.has(su.id));
-    h+=`<div style="margin-top:8px;display:flex;gap:6px;align-items:center">`;
-    h+=`<select id="mb-add-${route.replace(/ /g,'-')}" style="flex:1;border:1px solid #E5E7EB;border-radius:8px;padding:7px 10px;font-size:12px;outline:none;background:white"><option value="">+ Add passenger…</option>${addOpts.map(su=>`<option value="${su.id}">${esc(su.name)}${!daySUIds.has(su.id)?' (ad-hoc)':''}</option>`).join('')}</select>`;
-    h+=`<button onclick="(function(){const sel=document.getElementById('mb-add-${route.replace(/ /g,'-')}');const suId=sel&&sel.value;if(!suId)return;setMbAlloc('${wk}','${day}',suId,'pickupRoute','${route}');sel.value=''})()" style="border:none;background:#6366F1;color:white;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">Add</button>`;
-    h+=`</div>`;
-    h+=`</div>`;
-  });
-
-  // Personal transport group
-  const personalSUs=buckets['personal'];
-  if(personalSUs.length){
-    h+=`<div style="background:white;border-radius:14px;padding:14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,0.06)">`;
-    h+=`<div style="font-size:13px;font-weight:700;color:#1F2937;margin-bottom:8px">🚗 Personal Transport</div>`;
-    h+=`<div style="display:flex;flex-wrap:wrap;gap:6px">`;
-    personalSUs.forEach(su=>{
-      h+=`<div style="display:inline-flex;align-items:center;gap:4px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:100px;padding:5px 12px;font-size:12px;font-weight:600;color:#92400E">${regBadge(su.id)} ${esc(su.name)} <button onclick="clearMbAlloc('${wk}','${day}','${su.id}')" style="border:none;background:none;color:#92400E;cursor:pointer;font-size:11px;opacity:0.7;padding:0 2px">×</button></div>`;
+  // Global alert banner
+  const allAlerts=minibuses.flatMap(v=>fleetAlerts(v).map(a=>({...a,veh:v})));
+  if(allAlerts.length){
+    h+=`<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:12px;padding:12px 16px;margin-bottom:14px">`;
+    h+=`<div style="font-size:12px;font-weight:700;color:#92400E;margin-bottom:6px">⚠️ Upcoming / Overdue</div>`;
+    h+=`<div style="display:flex;flex-wrap:wrap;gap:8px">`;
+    allAlerts.forEach(a=>{
+      const clr=a.days<0?'#DC2626':a.days<=14?'#EA580C':'#CA8A04';
+      const msg=a.days<0?`expired ${Math.abs(a.days)}d ago`:a.days===0?`expires today`:`due in ${a.days}d`;
+      h+=`<button onclick="fleetViewId='${a.veh.id}';render()" style="border:1px solid ${clr}44;background:white;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:600;color:${clr};cursor:pointer">${esc(a.veh.reg||a.veh.name)} ${a.type} ${msg}</button>`;
     });
     h+=`</div></div>`;
   }
 
-  h+=`</div>`; // end day planner
-
-} else {
-  // ===== RUNSHEET VIEW =====
-  h+=`<div style="margin-bottom:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">`;
-  h+=`<div style="display:flex;align-items:center;gap:6px"><label style="font-size:12px;font-weight:700;color:#6B7280">Route</label><select style="border:1px solid #E5E7EB;border-radius:8px;padding:7px 10px;font-size:13px;outline:none;background:white" onchange="minibusRoute=this.value;render()">${ROUTE_OPTS.map(r=>`<option value="${r}" ${minibusRoute===r?'selected':''}>${r}</option>`).join('')}</select></div>`;
-  h+=`<div style="display:flex;align-items:center;gap:6px"><label style="font-size:12px;font-weight:700;color:#6B7280">Day</label><select style="border:1px solid #E5E7EB;border-radius:8px;padding:7px 10px;font-size:13px;outline:none;background:white" onchange="minibusDay=this.value;render()">${['mon','tue','wed','thu','fri'].map(d=>`<option value="${d}" ${minibusDay===d?'selected':''}>${{mon:'Monday',tue:'Tuesday',wed:'Wednesday',thu:'Thursday',fri:'Friday'}[d]}</option>`).join('')}</select></div>`;
-  h+=`<button onclick="window.print()" style="border:1px solid #E5E7EB;background:white;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer;margin-left:auto">🖨 Print</button>`;
+  // Add vehicle button
+  h+=`<div style="display:flex;justify-content:flex-end;margin-bottom:12px">`;
+  h+=`<button onclick="addingVehicle=!addingVehicle;render()" style="border:none;background:#6366F1;color:white;border-radius:10px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">${addingVehicle?'✕ Cancel':'+ Add Vehicle'}</button>`;
   h+=`</div>`;
 
-  if(!minibusRoute)minibusRoute=ROUTE_OPTS[0];
-  const wk=mbWk;const day=minibusDay;
-  const route=minibusRoute;
-  const dc=getDriverCell(wk,route,day,'AM');
-  const dayAlloc=minibusAllocation[wk]?.[day]||{};
-
-  // Gather SUs on this route (pickup or return)
-  const routeSUs=serviceUsers.filter(su=>{
-    const a=dayAlloc[su.id];
-    return a&&(a.pickupRoute===route||a.returnRoute===route);
-  }).sort((a,b)=>a.name.localeCompare(b.name));
-
-  let pickupCount=0,returnCount=0,personalCount=0,notRetCount=0;
-  serviceUsers.forEach(su=>{
-    const a=dayAlloc[su.id];if(!a)return;
-    if(a.pickupRoute===route)pickupCount++;
-    if(a.returnRoute===route)returnCount++;
-    if(a.pickupRoute==='personal')personalCount++;
-    if(a.returnRoute==='notreturning')notRetCount++;
-  });
-
-  h+=`<div id="mb-runsheet" style="background:white;border-radius:14px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.06)">`;
-  h+=`<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:16px;flex-wrap:wrap;gap:8px">`;
-  h+=`<div><div style="font-size:18px;font-weight:700;color:#1F2937">🚐 ${esc(route)} — ${{mon:'Monday',tue:'Tuesday',wed:'Wednesday',thu:'Thursday',fri:'Friday'}[day]}</div>`;
-  h+=`<div style="font-size:12px;color:#6B7280;margin-top:2px">${mbWk} · ${fmtShortDate(mbDates[['mon','tue','wed','thu','fri'].indexOf(day)])}</div></div>`;
-  h+=`<div style="font-size:12px;color:#374151">${dc.driver?`<strong>Driver:</strong> ${esc(dc.driver)}<br>`:''}${dc.minibus?`<strong>Vehicle:</strong> ${esc(dc.minibus)}`:''}${!dc.driver&&!dc.minibus?'<span style="color:#D1D5DB">No driver assigned</span>':''}</div>`;
-  h+=`</div>`;
-
-  if(routeSUs.length===0){
-    h+=`<div style="text-align:center;padding:32px;color:#9CA3AF;font-size:13px">No passengers allocated to ${esc(route)} on this day</div>`;
-  } else {
-    h+=`<div style="overflow-x:auto">`;
-    h+=`<table style="width:100%;border-collapse:collapse;font-size:12px">`;
-    h+=`<thead><tr style="border-bottom:2px solid #E5E7EB;text-align:left">
-      <th style="padding:8px 6px;color:#6B7280;font-weight:700;white-space:nowrap">Name</th>
-      <th style="padding:8px 6px;color:#6B7280;font-weight:700;text-align:center">Here</th>
-      <th style="padding:8px 6px;color:#6B7280;font-weight:700;text-align:center">Pickup</th>
-      <th style="padding:8px 6px;color:#6B7280;font-weight:700">Address</th>
-      <th style="padding:8px 6px;color:#6B7280;font-weight:700">Carer / Phone</th>
-      <th style="padding:8px 6px;color:#6B7280;font-weight:700;text-align:center">Return</th>
-      <th style="padding:8px 6px;color:#6B7280;font-weight:700">Notes</th>
-    </tr></thead><tbody>`;
-
-    routeSUs.forEach(su=>{
-      const a=dayAlloc[su.id]||{};
-      const regSt=getRegStat(wk,day,su.id);
-      const hereTxt=regSt==='present'?'<span style="color:#16A34A;font-weight:700">✓</span>':regSt==='absent'?'<span style="color:#DC2626;font-weight:700">✗</span>':'<span style="color:#D1D5DB">–</span>';
-      const pickupHere=a.pickupRoute===route;
-      const returnHere=a.returnRoute===route;
-      const addr=[su.addr,su.town,su.pc].filter(Boolean).join(', ');
-      const carer=[su.cn,su.cm].filter(Boolean).join(' · ')||'–';
-      h+=`<tr style="border-bottom:1px solid #F3F4F6">
-        <td style="padding:8px 6px;font-weight:600;color:#1F2937;white-space:nowrap">${esc(su.name)}</td>
-        <td style="padding:8px 6px;text-align:center">${hereTxt}</td>
-        <td style="padding:8px 6px;text-align:center">${pickupHere?'<span style="color:#16A34A;font-weight:700">✓</span>':'<span style="color:#D1D5DB">–</span>'}</td>
-        <td style="padding:8px 6px;color:#374151;max-width:160px">${esc(addr)||'–'}</td>
-        <td style="padding:8px 6px;color:#374151;max-width:120px;white-space:pre-wrap">${esc(carer)}</td>
-        <td style="padding:8px 6px;text-align:center">${a.returnRoute==='notreturning'?'<span style="color:#DC2626;font-size:10px;font-weight:600">Not returning</span>':returnHere?'<span style="color:#16A34A;font-weight:700">✓</span>':'<span style="color:#D1D5DB">–</span>'}</td>
-        <td style="padding:8px 6px;color:#6B7280">${esc(a.notes||'')}</td>
-      </tr>`;
+  // Add vehicle form
+  if(addingVehicle){
+    h+=`<div style="background:white;border-radius:14px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.07);margin-bottom:14px">`;
+    h+=`<div style="font-size:13px;font-weight:700;color:#1F2937;margin-bottom:12px">New Vehicle</div>`;
+    // Type toggle
+    h+=`<div style="margin-bottom:12px"><label style="font-size:11px;font-weight:600;color:#6B7280;display:block;margin-bottom:6px">Type</label><div style="display:flex;gap:8px">`;
+    h+=`<button id="nv-type-minibus" onclick="document.getElementById('nv-type-minibus').style.cssText+='border-color:#3A7BD5;background:#EFF6FF;color:#3A7BD5';document.getElementById('nv-type-car').style.cssText+='border-color:#E5E7EB;background:white;color:#6B7280';document.getElementById('nv-tailift-row').style.display='flex';document.getElementById('nv-doors-row').style.display='none';document.getElementById('nv-type-val').value='minibus'" style="border:2px solid #3A7BD5;background:#EFF6FF;color:#3A7BD5;border-radius:100px;padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer">🚐 Minibus</button>`;
+    h+=`<button id="nv-type-car" onclick="document.getElementById('nv-type-car').style.cssText+='border-color:#3A7BD5;background:#EFF6FF;color:#3A7BD5';document.getElementById('nv-type-minibus').style.cssText+='border-color:#E5E7EB;background:white;color:#6B7280';document.getElementById('nv-tailift-row').style.display='none';document.getElementById('nv-doors-row').style.display='flex';document.getElementById('nv-type-val').value='car'" style="border:2px solid #E5E7EB;background:white;color:#6B7280;border-radius:100px;padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer">🚗 Car</button>`;
+    h+=`</div><input type="hidden" id="nv-type-val" value="minibus"></div>`;
+    h+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">`;
+    ['name:Name / Nickname:e.g. Van 1','reg:Registration:e.g. OV25XXL','make:Make:e.g. Ford','model:Model:e.g. Transit','year:Year:e.g. 2022','seats:Seats:e.g. 9','colour:Colour:e.g. White'].forEach(spec=>{
+      const [fld,lbl,ph]=spec.split(':');
+      h+=`<div><label style="font-size:11px;font-weight:600;color:#6B7280;display:block;margin-bottom:3px">${lbl}</label><input id="nv-${fld}" placeholder="${ph}" style="width:100%;border:1px solid #E5E7EB;border-radius:8px;padding:7px 10px;font-size:12px;outline:none;box-sizing:border-box"></div>`;
     });
-
-    h+=`</tbody></table></div>`;
-    h+=`<div style="display:flex;gap:12px;margin-top:12px;font-size:12px;color:#6B7280;flex-wrap:wrap;padding-top:12px;border-top:1px solid #F3F4F6">`;
-    h+=`<span>Pickup: <strong>${pickupCount}</strong></span>`;
-    h+=`<span>Return: <strong>${returnCount}</strong></span>`;
-    h+=`<span>Personal transport: <strong>${personalCount}</strong></span>`;
-    h+=`<span>Not returning by bus: <strong>${notRetCount}</strong></span>`;
+    // Tailift (shown for minibus by default)
+    h+=`<div id="nv-tailift-row" style="display:flex;align-items:flex-end;padding-bottom:2px"><label style="font-size:12px;font-weight:700;color:#374151;display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="nv-tailift"> Working tailift</label></div>`;
+    // Doors (hidden by default, shown for car)
+    h+=`<div id="nv-doors-row" style="display:none"><label style="font-size:11px;font-weight:600;color:#6B7280;display:block;margin-bottom:3px">Doors</label><select id="nv-doors" style="width:100%;border:1px solid #E5E7EB;border-radius:8px;padding:7px 10px;font-size:12px;outline:none;background:white;box-sizing:border-box"><option value="">— Select —</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div>`;
+    h+=`</div>`;
+    h+=`<div style="margin-bottom:10px"><label style="font-size:11px;font-weight:600;color:#6B7280;display:block;margin-bottom:3px">Notes</label><input id="nv-notes" placeholder="Optional notes" style="width:100%;border:1px solid #E5E7EB;border-radius:8px;padding:7px 10px;font-size:12px;outline:none;box-sizing:border-box"></div>`;
+    h+=`<button onclick="(function(){
+      const g=id=>document.getElementById('nv-'+id)?.value||'';
+      const type=g('type-val')||'minibus';
+      const v={id:'mb_'+Date.now(),type,name:g('name'),reg:g('reg').toUpperCase(),make:g('make'),model:g('model'),year:g('year'),seats:g('seats'),colour:g('colour'),notes:g('notes'),active:true,log:[]};
+      if(type==='minibus')v.tailift=document.getElementById('nv-tailift')?.checked||false;
+      if(type==='car')v.doors=g('doors');
+      if(!v.name&&!v.reg){alert('Please enter a name or registration.');return;}
+      minibuses.push(v);addingVehicle=false;save();render();
+    })()" style="border:none;background:#10B981;color:white;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer">Add Vehicle</button>`;
     h+=`</div>`;
   }
-  h+=`</div>`; // runsheet card
-  h+=`</div>`; // padding wrapper
+
+  // Vehicle cards
+  if(!minibuses.length&&!addingVehicle){
+    h+=`<div style="text-align:center;padding:48px 16px;color:#9CA3AF"><div style="font-size:40px;margin-bottom:10px">🚐</div><div style="font-size:14px;font-weight:600;margin-bottom:4px">No vehicles registered</div><div style="font-size:12px">Click "+ Add Vehicle" to get started.</div></div>`;
+  } else {
+    h+=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px">`;
+    minibuses.forEach(v=>{
+      const alerts=fleetAlerts(v);
+      const lastMileage=(v.log||[]).filter(e=>e.mileage).sort((a,b)=>b.date.localeCompare(a.date))[0];
+      const isCar=v.type==='car';
+      const vIcon=isCar?'🚗':'🚐';
+      const cardBg=isCar?'#FFF7ED':'#EEF2FF';
+      const totalSpend=(v.log||[]).reduce((s,e)=>s+(e.cost?parseFloat(e.cost):0),0);
+      h+=`<div onclick="fleetViewId='${v.id}';editingVehicleId=null;addingFleetLog=null;render()" style="background:white;border-radius:14px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.07);cursor:pointer;border:2px solid ${alerts.some(a=>a.days<0)?'#FCA5A5':alerts.length?'#FDE68A':'transparent'};transition:box-shadow .15s" onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,0.1)'" onmouseout="this.style.boxShadow='0 1px 3px rgba(0,0,0,0.07)'">`;
+      h+=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">`;
+      h+=`<div style="width:40px;height:40px;border-radius:10px;background:${cardBg};display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">${vIcon}</div>`;
+      h+=`<div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:800;color:#1F2937">${esc(v.reg||v.name||'—')}</div>`;
+      if(v.name&&v.name!==v.reg)h+=`<div style="font-size:11px;color:#6B7280">${esc(v.name)}</div>`;
+      h+=`</div>`;
+      if(v.active===false)h+=`<span style="background:#F3F4F6;color:#9CA3AF;border-radius:100px;padding:2px 8px;font-size:10px;font-weight:700">Inactive</span>`;
+      h+=`</div>`;
+      const meta=[isCar?'Car':'Minibus',v.make,v.model,v.year,v.seats?v.seats+' seats':null,isCar&&v.doors?v.doors+'-door':null,!isCar&&v.tailift?'Tailift ✓':null].filter(Boolean);
+      if(meta.length)h+=`<div style="font-size:11px;color:#9CA3AF;margin-bottom:6px">${meta.map(esc).join(' · ')}</div>`;
+      if(lastMileage)h+=`<div style="font-size:11px;color:#6B7280;margin-bottom:4px">Last mileage: <strong>${Number(lastMileage.mileage).toLocaleString()}</strong> (${lastMileage.date})</div>`;
+      if(totalSpend>0)h+=`<div style="font-size:11px;color:#6B7280;margin-bottom:4px">Total spend: <strong>£${totalSpend.toFixed(2)}</strong></div>`;
+      if(alerts.length){
+        h+=`<div style="display:flex;flex-wrap:wrap;gap:4px">`;
+        alerts.forEach(a=>{
+          const clr=a.days<0?'#DC2626':a.days<=14?'#EA580C':'#CA8A04';
+          h+=`<span style="background:${clr}18;color:${clr};border-radius:6px;padding:2px 7px;font-size:10px;font-weight:700">⚠️ ${a.type} ${a.days<0?'overdue':a.days===0?'today':a.days+'d'}</span>`;
+        });
+        h+=`</div>`;
+      } else {
+        h+=`<div style="font-size:11px;color:#D1D5DB">${(v.log||[]).length} log ${(v.log||[]).length===1?'entry':'entries'}</div>`;
+      }
+      h+=`</div>`;
+    });
+    h+=`</div>`;
+  }
 }
+} // end fleet
 
 h+=`</div>`; // outer padding
 }

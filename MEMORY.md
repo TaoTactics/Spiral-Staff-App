@@ -17,6 +17,8 @@ For in-progress task state, use SESSION_HANDOFF.md instead.
 | Backups | Nightly at 22:00 via cron → `scripts/nightly-backup.sh` → self-contained HTML → Google Drive (`gdrive:SpiralBackups/`) via rclone |
 | Roles | `superadmin`, `manager`, `staff`, `driver`, `serviceuser`, `carer`, `foss`. FOSS users default to FOSS mode on login but can switch to Spiral. |
 | HR system | Staff profiles with 7 categories (personal, employment, qualifications, capabilities, compliance, health, documents). Per-record access control via `hrAccess`. Capability badges shown in rota view. |
+| Spending | Receipts + Petty Cash tab (manager+). Receipts have payment source (Petty Cash / Staff reimburse / Card-Online / Other), one-click reimburse from petty cash. Petty cash transactions have category, staff/client multi-select, cash in/out, invoice/transaction numbers. Categories and vendors are combobox-style (type new or pick existing, remembered). |
+| Tab visibility | Calendar, Dashboard, History = superadmin-only. Rota, Incidents, Spending = manager+. Staff = all. Users = manager+. Controlled by `canSeeTab()`. |
 | Test server | Git worktree at `/var/www/spiral-tracker-test`, `dev` branch, port 3001, own DB (`spiral-test.db`). No HSTS/upgrade-insecure-requests (plain HTTP). |
 
 ---

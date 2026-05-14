@@ -74,7 +74,7 @@ None. After changes:
 ## Coding conventions
 
 - **Backend**: synchronous `better-sqlite3` (no async/await for DB). Follow existing route patterns.
-- **Frontend**: all state in globals — `D`, `staff`, `serviceUsers`, `schedule`, `staffProfiles`, `rota`, `driverRota`, `weekSchedules`, `registers`, `fossData`, `history`, `hrAccess`, `incidents`, `minibusAllocation`. Mutations need `save()` then usually `render()`. `save()` will not push to server until `serverDataLoaded` is true (prevents stale-browser overwrites).
+- **Frontend**: all state in globals — `D`, `staff`, `serviceUsers`, `schedule`, `staffProfiles`, `rota`, `driverRota`, `weekSchedules`, `registers`, `fossData`, `history`, `hrAccess`, `incidents`, `minibusAllocation`, `spending`. Mutations need `save()` then usually `render()`. `save()` will not push to server until `serverDataLoaded` is true (prevents stale-browser overwrites).
 - **App data**: serialised as one JSON blob in `app_data` (id=1). Add new fields inside the blob; do not create new SQLite tables for app state.
 - **Frontend files**: edit `public/app.css` for styles, `public/app.js` for logic. `index.html` is just the shell — don't put CSS or JS back into it. No bundler, no framework.
 - **Style**: smallest safe change. Don't refactor unrelated code or add comments to untouched lines.
@@ -97,6 +97,8 @@ None. After changes:
 - **`DEF_*` arrays** near the top of `public/app.js` — seed data for fresh installs.
 - **`staffProfiles` sub-objects** — `personal`, `employment`, `qualifications`, `capabilities`, `compliance`, `health`, `documents`. Backfilled with `|| {}` / `|| []` defaults in `applyData()` for backward compat.
 - **`hrAccess`** — per-record access control for staff HR data. Managed by superadmin. Stored in the JSON blob.
+- **`spending`** — receipts and petty cash data. Stored in the JSON blob. Sub-objects: `receipts[]`, `pettyCash.topUps[]`, `pettyCash.transactions[]`, `customCategories[]`, `customVendors[]`. Receipts link to petty cash via `receiptId`. Backfilled with defaults in `applyData()`.
+- **`canSeeTab()` visibility** — Calendar, Dashboard, History are superadmin-only. Rota, Incidents, Spending are manager+. Staff tab is visible to all. Users tab is manager+. Do not change without checking impact on all roles.
 - **Nightly backup cron** — runs at 22:00 daily via `scripts/nightly-backup.sh`. Uploads to Google Drive (`gdrive:SpiralBackups/`). Do not remove without providing an alternative.
 
 ---
